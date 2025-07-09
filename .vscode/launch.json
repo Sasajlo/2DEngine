@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Build and Run",
+            "type": "coreclr",
+            "request": "launch",
+            "preLaunchTask": "Build",
+            "program": "${workspaceFolder}/Build/Engine.exe",
+            "args": [],
+            "cwd": "${workspaceFolder}/Build",
+            "console": "integratedTerminal",
+            "stopAtEntry": false
+        }
+    ]
+}
