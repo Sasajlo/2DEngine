@@ -1,0 +1,10 @@
+{
+  "name": "Dirt",
+  "color": {
+    "r": 1.0,
+    "g": 1.0,
+    "b": 1.0,
+    "a": 1.0
+  },
+  "texture": "Assets/Textures/Tiles/dirt.png"
+}

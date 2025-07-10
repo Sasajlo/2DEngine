@@ -39,13 +39,17 @@ VulkanRenderer::VulkanRenderer()
     , m_spriteVertexBufferMemory(VK_NULL_HANDLE)
     , m_spriteIndexBuffer(VK_NULL_HANDLE)
     , m_spriteIndexBufferMemory(VK_NULL_HANDLE)
-    , m_textureSampler(VK_NULL_HANDLE) {
+    , m_textureSampler(VK_NULL_HANDLE)
+    , m_nextTextureIndex(0) {
     
     // Initialize vectors to avoid issues during shutdown
     m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
     m_renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
     m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
     m_commandBuffers.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
+    
+    // Initialize texture array
+    m_textureArray.resize(MAX_TEXTURES, VK_NULL_HANDLE);
     
     // Initialize camera matrices to identity
     for (int i = 0; i < 16; i++) {
@@ -688,9 +692,9 @@ bool VulkanRenderer::CreateGraphicsPipeline() {
     
     // Pipeline layout with push constants
     VkPushConstantRange pushConstantRange{};
-    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
     pushConstantRange.offset = 0;
-    pushConstantRange.size = sizeof(float) * (16 + 4 + 2); // mat4 model + vec4 color + vec2 size
+    pushConstantRange.size = sizeof(float) * (16 + 4 + 2 + 1 + 1); // mat4 model + vec4 color + vec2 size + uint textureIndex + float padding
     
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
@@ -820,7 +824,7 @@ void VulkanRenderer::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t
     renderPassInfo.renderArea.offset = {0, 0};
     renderPassInfo.renderArea.extent = m_swapChainExtent;
     
-    VkClearValue clearColor = {{{0.1f, 0.1f, 0.1f, 1.0f}}}; // Dark gray background
+            VkClearValue clearColor = {{{0.53f, 0.81f, 0.92f, 1.0f}}}; // Sky blue background
     renderPassInfo.clearValueCount = 1;
     renderPassInfo.pClearValues = &clearColor;
     
@@ -841,46 +845,29 @@ void VulkanRenderer::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t
     // Bind index buffer
     vkCmdBindIndexBuffer(commandBuffer, m_spriteIndexBuffer, 0, VK_INDEX_TYPE_UINT16);
     
-    // Render sprites from the sprite queue
+    // Render sprites with descriptor indexing (no need to sort or switch textures)
     for (size_t i = 0; i < m_spriteQueue.size(); i++) {
         const auto& sprite = m_spriteQueue[i];
         
-        // Find the texture for this sprite
-        auto textureIt = m_textureViews.find(sprite.texturePath);
-        if (textureIt != m_textureViews.end()) {
-            // Update descriptor set with the texture for this sprite
-            VkDescriptorImageInfo imageInfo{};
-            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            imageInfo.imageView = textureIt->second;
-            imageInfo.sampler = m_textureSampler;
-
-            VkWriteDescriptorSet descriptorWrite{};
-            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptorWrite.dstSet = m_spriteDescriptorSets[0];
-            descriptorWrite.dstBinding = 1;
-            descriptorWrite.dstArrayElement = 0;
-            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            descriptorWrite.descriptorCount = 1;
-            descriptorWrite.pImageInfo = &imageInfo;
-
-            vkUpdateDescriptorSets(m_device, 1, &descriptorWrite, 0, nullptr);
-        }
+        // Prepare push constants: model matrix (16 floats) + color (4 floats) + size (2 floats) + texture index (1 uint)
+        struct PushConstants {
+            float worldMatrix[16];
+            float color[4];
+            float size[2];
+            uint32_t textureIndex;
+            float padding; // Align to 4 bytes
+        } pushData;
         
-        // Prepare push constants: model matrix (16 floats) + color (4 floats) + size (2 floats)
-        float pushData[22];
-        
-        // Copy model matrix (16 floats)
-        memcpy(pushData, sprite.worldMatrix, sizeof(float) * 16);
-        
-        // Copy color (4 floats)
-        memcpy(pushData + 16, sprite.color, sizeof(float) * 4);
-        
-        // Copy size (2 floats)
-        memcpy(pushData + 20, sprite.size, sizeof(float) * 2);
+        // Copy data to push constants
+        memcpy(pushData.worldMatrix, sprite.worldMatrix, sizeof(float) * 16);
+        memcpy(pushData.color, sprite.color, sizeof(float) * 4);
+        memcpy(pushData.size, sprite.size, sizeof(float) * 2);
+        pushData.textureIndex = sprite.textureIndex;
+        pushData.padding = 0.0f;
         
         // Push constants for this sprite
-        vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 
-                          0, sizeof(pushData), pushData);
+        vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT, 
+                          0, sizeof(pushData), &pushData);
         
         // Draw indexed quad (6 indices for 2 triangles)
         vkCmdDrawIndexed(commandBuffer, 6, 1, 0, 0, 0);
@@ -940,13 +927,15 @@ void VulkanRenderer::RenderSprite(
     if (texturePath && worldMatrix && color && size) {
         // Load the texture if it hasn't been loaded yet
         std::string texturePathStr(texturePath);
-        if (!LoadTexture(texturePathStr)) {
+        uint32_t textureIndex = LoadTexture(texturePathStr);
+        if (textureIndex == UINT32_MAX) {
             std::cerr << "Failed to load texture: " << texturePath << std::endl;
             return;
         }
         
         SpriteData sprite;
         sprite.texturePath = texturePathStr;
+        sprite.textureIndex = textureIndex;
         
         // Copy matrices and data
         for (int i = 0; i < 16; i++) {
@@ -1139,11 +1128,11 @@ bool VulkanRenderer::CreateDescriptorSetLayout() {
     uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
     uboLayoutBinding.pImmutableSamplers = nullptr;
 
-    // Texture sampler binding (binding 1)
+    // Texture sampler array binding (binding 1)
     VkDescriptorSetLayoutBinding samplerLayoutBinding{};
     samplerLayoutBinding.binding = 1;
     samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.descriptorCount = MAX_TEXTURES;
     samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
     samplerLayoutBinding.pImmutableSamplers = nullptr;
 
@@ -1192,12 +1181,12 @@ bool VulkanRenderer::CreateUniformBuffer() {
 }
 
 bool VulkanRenderer::CreateDescriptorSets() {
-    // Create descriptor pool
+    // Create descriptor pool with enough space for texture array
     std::array<VkDescriptorPoolSize, 2> poolSizes{};
     poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
     poolSizes[0].descriptorCount = 1;
     poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-    poolSizes[1].descriptorCount = 1;
+    poolSizes[1].descriptorCount = MAX_TEXTURES;
 
     VkDescriptorPoolCreateInfo poolInfo{};
     poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
@@ -1239,6 +1228,33 @@ bool VulkanRenderer::CreateDescriptorSets() {
     vkUpdateDescriptorSets(m_device, 1, &descriptorWrite, 0, nullptr);
 
     return true;
+}
+
+void VulkanRenderer::UpdateTextureDescriptorSet() {
+    // Only update if we have textures and descriptor sets are created
+    if (m_nextTextureIndex == 0 || m_spriteDescriptorSets.empty()) {
+        return;
+    }
+
+    // Create descriptor image infos for all loaded textures
+    std::vector<VkDescriptorImageInfo> imageInfos(m_nextTextureIndex);
+    for (uint32_t i = 0; i < m_nextTextureIndex; i++) {
+        imageInfos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        imageInfos[i].imageView = m_textureArray[i];
+        imageInfos[i].sampler = m_textureSampler;
+    }
+
+    // Update descriptor set with texture array
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = m_spriteDescriptorSets[0];
+    descriptorWrite.dstBinding = 1;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    descriptorWrite.descriptorCount = m_nextTextureIndex;
+    descriptorWrite.pImageInfo = imageInfos.data();
+
+    vkUpdateDescriptorSets(m_device, 1, &descriptorWrite, 0, nullptr);
 }
 
 uint32_t VulkanRenderer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
@@ -1288,10 +1304,17 @@ void VulkanRenderer::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDevice
 } 
 
 // Texture loading functions
-bool VulkanRenderer::LoadTexture(const std::string& texturePath) {
+uint32_t VulkanRenderer::LoadTexture(const std::string& texturePath) {
     // Check if texture is already loaded
-    if (m_textures.find(texturePath) != m_textures.end()) {
-        return true;
+    auto it = m_textureIndices.find(texturePath);
+    if (it != m_textureIndices.end()) {
+        return it->second;
+    }
+
+    // Check if we have space for more textures
+    if (m_nextTextureIndex >= MAX_TEXTURES) {
+        std::cerr << "Maximum number of textures exceeded!" << std::endl;
+        return UINT32_MAX; // Invalid texture index
     }
 
     VkImage textureImage;
@@ -1299,21 +1322,29 @@ bool VulkanRenderer::LoadTexture(const std::string& texturePath) {
     VkImageView textureImageView;
 
     if (!CreateTextureImage(texturePath, textureImage, textureImageMemory)) {
-        return false;
+        return UINT32_MAX;
     }
 
     if (!CreateTextureImageView(textureImage, textureImageView)) {
         vkDestroyImage(m_device, textureImage, nullptr);
         vkFreeMemory(m_device, textureImageMemory, nullptr);
-        return false;
+        return UINT32_MAX;
     }
 
+    // Assign texture index
+    uint32_t textureIndex = m_nextTextureIndex++;
+    
     // Store texture resources
     m_textures[texturePath] = textureImage;
     m_textureViews[texturePath] = textureImageView;
     m_textureMemory[texturePath] = textureImageMemory;
+    m_textureIndices[texturePath] = textureIndex;
+    m_textureArray[textureIndex] = textureImageView;
 
-    return true;
+    // Update the descriptor set with the new texture array
+    UpdateTextureDescriptorSet();
+
+    return textureIndex;
 }
 
 bool VulkanRenderer::CreateTextureImage(const std::string& texturePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory) {

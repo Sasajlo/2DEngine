@@ -15,13 +15,21 @@ bool Window::Initialize(int width, int height, const std::string& title) {
     
     // Tell GLFW not to create an OpenGL context
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    // TODO: Enable resizing once swapchain recreation is implemented
     glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+    // Start maximized
+    glfwWindowHint(GLFW_MAXIMIZED, GLFW_TRUE);
     
     m_window = glfwCreateWindow(width, height, title.c_str(), nullptr, nullptr);
     if (!m_window) {
         std::cerr << "Failed to create GLFW window" << std::endl;
         return false;
     }
+    
+    // Get actual window size after maximization
+    glfwGetFramebufferSize(m_window, &m_width, &m_height);
+    
+    // TODO: Add resize callback when swapchain recreation is implemented
     
     return true;
 }

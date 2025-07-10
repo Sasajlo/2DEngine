@@ -28,7 +28,8 @@ namespace Engine
             // Create a demo scene
             CreateDemoScene(engine);
 
-            Console.WriteLine("Demo scene created. Window should now be visible. Close it to exit.");
+            Console.WriteLine("Tile world created. Window should now be visible. Close it to exit.");
+            Console.WriteLine("Top: Air tiles | Surface: Grass tiles | Underground: Dirt tiles");
             Console.WriteLine();
             Console.WriteLine("Camera Controls:");
             Console.WriteLine("  WASD         - Move camera (speed scales with zoom)");
@@ -44,65 +45,41 @@ namespace Engine
         static void CreateDemoScene(SimpleEngine engine)
         {
             // Create a new scene
-            var scene = engine.sceneManager.CreateScene("DemoScene");
+            var scene = engine.sceneManager.CreateScene("TileWorldScene");
             
             // Create camera object
             var cameraObject = scene.CreateGameObject("MainCamera");
             
-            // Set camera transform (Unity-style access)
-            cameraObject.transform.position = new Vector3(0.0f, 0.0f, 10.0f);
+            // Set camera transform to view the center of the 100x100 tile world
+            cameraObject.transform.position = new Vector3(50.0f, 50.0f, 10.0f);
             
             // Add camera component
             var camera = cameraObject.AddComponent<Camera>();
-            camera.orthographicSize = 5.0f;
-            camera.backgroundColor = new Vector4(0.2f, 0.3f, 0.4f, 1.0f); // Nice blue background
+            camera.orthographicSize = 30.0f; // Zoom out to see more of the world
+            camera.backgroundColor = new Vector4(0.53f, 0.81f, 0.92f, 1.0f); // Sky blue background
             
             // Add camera controller for WASD movement and mouse scroll zoom
             var cameraController = cameraObject.AddComponent<CameraController>();
-            cameraController.moveSpeed = 1.0f; // Base movement speed (scaled by zoom level)
+            cameraController.moveSpeed = 10.0f; // Faster movement for large world
             cameraController.zoomSpeed = 0.15f; // Smooth percentage-based zoom (15% per scroll)
             cameraController.minZoom = 1.0f;
-            cameraController.maxZoom = 15.0f;
+            cameraController.maxZoom = 100.0f; // Allow more zoom out for large world
             
-            // Create sprite object
-            var spriteObject = scene.CreateGameObject("Sprite");
+            // Set world boundaries to match the tile world
+            // Sprites are centered at their position, so tiles span from -0.5 to 99.5
+            cameraController.worldMinX = -0.5f;
+            cameraController.worldMinY = -0.5f;
+            cameraController.worldMaxX = 99.5f; // Last tile at (99,99) extends to 99.5
+            cameraController.worldMaxY = 99.5f; // Last tile at (99,99) extends to 99.5
             
-            // Set transform (Unity-style access)
-            spriteObject.transform.position = new Vector3(0.0f, 2.0f, 0.0f);
-            spriteObject.transform.scale = new Vector3(2.0f, 2.0f, 1.0f);
+            // Create world manager object
+            var worldObject = scene.CreateGameObject("WorldManager");
+            var worldManager = worldObject.AddComponent<WorldManager>();
+            worldManager.worldWidth = 100;
+            worldManager.worldHeight = 100;
+            worldManager.tileSize = 1.0f;
             
-            // Add sprite component
-            var sprite = spriteObject.AddComponent<Sprite>();
-            sprite.texturePath = "Assets/Textures/square.png";
-            sprite.color = new Vector4(0.0f, 0.0f, 1.0f, 1.0f); // Blue color
-            sprite.size = new Vector2(2.0f, 1.0f);
-            
-            // Add sprite renderer component
-            var spriteRenderer = spriteObject.AddComponent<SpriteRenderer>();
-            spriteRenderer.sortingOrder = 0;
-            
-            // Add rotation component to demonstrate deltaTime
-            var rotateComponent = spriteObject.AddComponent<Rotate>();
-            rotateComponent.speed = 45.0f; // 45 degrees per second
-            
-            // Create a second sprite with different color and position
-            var spriteObject2 = scene.CreateGameObject("Sprite2");
-            
-            // Set transform (Unity-style access)
-            spriteObject2.transform.position = new Vector3(3.0f, 1.0f, 0.0f);
-            spriteObject2.transform.rotation = new Vector3(0.0f, 0.0f, 45.0f);
-            spriteObject2.transform.scale = new Vector3(1.5f, 1.5f, 1.0f);
-            
-            var sprite2 = spriteObject2.AddComponent<Sprite>();
-            sprite2.texturePath = "Assets/Textures/square.png";
-            sprite2.color = new Vector4(1.0f, 0.5f, 0.0f, 1.0f); // Orange color
-            sprite2.size = new Vector2(1.0f, 1.0f);
-            
-            var spriteRenderer2 = spriteObject2.AddComponent<SpriteRenderer>();
-            spriteRenderer2.sortingOrder = 1;
-        
-            
-            Console.WriteLine("Demo scene created!");
+            Console.WriteLine("Tile world scene created!");
         }
     }
 } 

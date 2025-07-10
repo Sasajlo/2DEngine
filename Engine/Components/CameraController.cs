@@ -9,12 +9,18 @@ namespace Engine.Components
     public class CameraController : Component
     {
         [Header("Movement")]
-        public float moveSpeed = 5.0f;
+        public float moveSpeed = 0.2f;
         
         [Header("Zoom")]
         public float zoomSpeed = 0.1f; // Zoom factor per scroll (10% per scroll)
         public float minZoom = 1.0f;
         public float maxZoom = 20.0f;
+        
+        [Header("World Boundaries")]
+        public float worldMinX = -0.5f;
+        public float worldMinY = -0.5f;
+        public float worldMaxX = 99.5f;
+        public float worldMaxY = 99.5f;
         
         private Camera _camera;
         private Transform _transform;
@@ -27,6 +33,31 @@ namespace Engine.Components
             if (_camera == null)
             {
                 // Console.WriteLine("CameraController: No Camera component found on GameObject!");
+            }
+        }
+        
+        public override void Start()
+        {
+            // Ensure camera starts within world boundaries
+            if (_camera != null && _transform != null)
+            {
+                // // First, constrain the zoom level to fit within world boundaries
+                // EngineCore.GetWindowSize(out int width, out int height);
+                // float aspectRatio = (float)width / height;
+                // float worldWidth = worldMaxX - worldMinX;
+                // float worldHeight = worldMaxY - worldMinY;
+                
+                // // Calculate maximum allowed orthographicSize to fit world
+                // float maxZoomForWidth = worldWidth / (2.0f * aspectRatio);
+                // float maxZoomForHeight = worldHeight / 2.0f;
+                // float dynamicMaxZoom = Math.Min(maxZoomForWidth, maxZoomForHeight);
+                // dynamicMaxZoom = Math.Min(dynamicMaxZoom, maxZoom);
+                
+                // Constrain initial orthographicSize
+                _camera.orthographicSize = minZoom * 5.0f;
+                
+                // Then constrain position
+                _transform.position = ClampCameraPosition(_transform.position);
             }
         }
         
@@ -62,7 +93,12 @@ namespace Engine.Components
                 float zoomScaledSpeed = moveSpeed * _camera.orthographicSize;
                 var movement = moveVector * zoomScaledSpeed * Time.deltaTime;
                 
-                _transform.position += movement;
+                var newPosition = _transform.position + movement;
+                
+                // Clamp camera position to world boundaries
+                newPosition = ClampCameraPosition(newPosition);
+                
+                _transform.position = newPosition;
             }
         }
         
@@ -81,7 +117,22 @@ namespace Engine.Components
                 // Negative scroll = zoom out (larger orthographic size)
                 float zoomFactor = 1.0f + (scrollDelta * zoomSpeed);
                 float oldZoom = _camera.orthographicSize;
-                float newZoom = Math.Clamp(oldZoom / zoomFactor, minZoom, maxZoom);
+                
+                // Calculate dynamic max zoom to ensure camera view doesn't exceed world bounds
+                EngineCore.GetWindowSize(out int width, out int height);
+                float aspectRatio = (float)width / height;
+                float worldWidth = worldMaxX - worldMinX;
+                float worldHeight = worldMaxY - worldMinY;
+                
+                // Maximum zoom should never allow camera viewport to exceed world bounds
+                // Camera height = orthographicSize * 2
+                // Camera width = Camera height * aspectRatio = orthographicSize * 2 * aspectRatio
+                float maxZoomForWidth = worldWidth / (2.0f * aspectRatio);
+                float maxZoomForHeight = worldHeight / 2.0f;
+                float dynamicMaxZoom = Math.Min(maxZoomForWidth, maxZoomForHeight);
+                dynamicMaxZoom = Math.Min(dynamicMaxZoom, maxZoom);
+                
+                float newZoom = Math.Clamp(oldZoom / zoomFactor, minZoom, dynamicMaxZoom);
                 _camera.orthographicSize = newZoom;
                 
                 // Calculate world point after zoom (same screen position)
@@ -89,8 +140,60 @@ namespace Engine.Components
                 
                 // Adjust camera position to keep the world point under the mouse
                 var worldPointDelta = worldPointBeforeZoom - worldPointAfterZoom;
-                _transform.position += worldPointDelta;
+                var newPosition = _transform.position + worldPointDelta;
+                
+                // Clamp camera position to world boundaries after zoom
+                newPosition = ClampCameraPosition(newPosition);
+                
+                _transform.position = newPosition;
             }
+        }
+        
+        private Vector3 ClampCameraPosition(Vector3 position)
+        {
+            // Get window size for aspect ratio
+            EngineCore.GetWindowSize(out int width, out int height);
+            float aspectRatio = (float)width / height;
+            
+            // Calculate camera view bounds
+            float cameraHeight = _camera.orthographicSize * 2.0f;
+            float cameraWidth = cameraHeight * aspectRatio;
+            
+            float halfWidth = cameraWidth * 0.5f;
+            float halfHeight = cameraHeight * 0.5f;
+            
+            // Calculate world bounds
+            float worldWidth = worldMaxX - worldMinX;
+            float worldHeight = worldMaxY - worldMinY;
+            float worldCenterX = (worldMaxX + worldMinX) * 0.5f;
+            float worldCenterY = (worldMaxY + worldMinY) * 0.5f;
+            
+            // If camera view is larger than world, center it
+            if (cameraWidth >= worldWidth)
+            {
+                position.X = worldCenterX;
+            }
+            else
+            {
+                // Clamp camera position so view stays within world bounds
+                float minX = worldMinX + halfWidth;
+                float maxX = worldMaxX - halfWidth;
+                position.X = Math.Clamp(position.X, minX, maxX);
+            }
+            
+            if (cameraHeight >= worldHeight)
+            {
+                position.Y = worldCenterY;
+            }
+            else
+            {
+                // Clamp camera position so view stays within world bounds
+                float minY = worldMinY + halfHeight;
+                float maxY = worldMaxY - halfHeight;
+                position.Y = Math.Clamp(position.Y, minY, maxY);
+            }
+            
+            return position;
         }
         
         private Vector3 ScreenToWorldPoint(Vector2 screenPoint)

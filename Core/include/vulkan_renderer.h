@@ -76,6 +76,7 @@ private:
     
     size_t m_currentFrame;
     static const int MAX_FRAMES_IN_FLIGHT = 2;
+    static const uint32_t MAX_TEXTURES = 1000;
     
     // Sprite rendering data
     struct SpriteVertex {
@@ -85,6 +86,7 @@ private:
     
     struct SpriteData {
         std::string texturePath;
+        uint32_t textureIndex;
         float worldMatrix[16];
         float color[4];
         float size[2];
@@ -99,11 +101,14 @@ private:
     float m_viewMatrix[16];
     float m_projectionMatrix[16];
     
-    // Texture management
+    // Texture management with descriptor indexing
     std::unordered_map<std::string, VkImage> m_textures;
     std::unordered_map<std::string, VkImageView> m_textureViews;
     std::unordered_map<std::string, VkDeviceMemory> m_textureMemory;
+    std::unordered_map<std::string, uint32_t> m_textureIndices;
+    std::vector<VkImageView> m_textureArray;
     VkSampler m_textureSampler;
+    uint32_t m_nextTextureIndex;
     
     // Sprite rendering pipeline
     VkPipeline m_spritePipeline;
@@ -149,7 +154,7 @@ private:
     VkShaderModule CreateShaderModule(const std::vector<char>& code);
     
     // Texture loading functions
-    bool LoadTexture(const std::string& texturePath);
+    uint32_t LoadTexture(const std::string& texturePath);
     bool CreateTextureImage(const std::string& texturePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory);
     bool CreateTextureImageView(VkImage textureImage, VkImageView& textureImageView);
     bool CreateTextureSampler();
@@ -162,6 +167,7 @@ private:
     bool CreateDescriptorSets();
     void UpdateUniformBuffer(uint32_t currentImage);
     void RenderSpriteQueue(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+    void UpdateTextureDescriptorSet();
     
     // Helper methods for buffer operations
     uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);

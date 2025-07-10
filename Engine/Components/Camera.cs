@@ -5,7 +5,7 @@ namespace Engine.Components
 {
     public class Camera : Component
     {
-        public float orthographicSize { get; set; } = 5.0f;
+        public float orthographicSize { get; set; } = 1.0f;
         public float near { get; set; } = 0.1f;
         public float far { get; set; } = 100.0f;
         public Vector4 backgroundColor { get; set; } = new Vector4(0.1f, 0.1f, 0.1f, 1.0f);

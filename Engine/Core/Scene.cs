@@ -42,7 +42,7 @@ namespace Engine
         
         public T FindObjectOfType<T>() where T : Component
         {
-            foreach (var gameObject in _gameObjects)
+            foreach (var gameObject in _gameObjects.ToList())
             {
                 var component = gameObject.GetComponent<T>();
                 if (component != null)
@@ -56,7 +56,7 @@ namespace Engine
         public T[] FindObjectsOfType<T>() where T : Component
         {
             var results = new List<T>();
-            foreach (var gameObject in _gameObjects)
+            foreach (var gameObject in _gameObjects.ToList())
             {
                 var component = gameObject.GetComponent<T>();
                 if (component != null)
@@ -79,7 +79,7 @@ namespace Engine
         
         public void AwakeAll()
         {
-            foreach (var gameObject in _gameObjects)
+            foreach (var gameObject in _gameObjects.ToList())
             {
                 gameObject.AwakeAll();
             }
@@ -87,7 +87,7 @@ namespace Engine
         
         public void Start()
         {
-            foreach (var gameObject in _gameObjects)
+            foreach (var gameObject in _gameObjects.ToList())
             {
                 gameObject.Start();
             }
@@ -95,7 +95,7 @@ namespace Engine
         
         public void Update()
         {
-            foreach (var gameObject in _gameObjects)
+            foreach (var gameObject in _gameObjects.ToList())
             {
                 gameObject.Update();
             }

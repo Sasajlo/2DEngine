@@ -1,0 +1,10 @@
+{
+  "name": "Air",
+  "color": {
+    "r": 0.0,
+    "g": 0.0,
+    "b": 0.0,
+    "a": 0.0
+  },
+  "texture": "Assets/Textures/Default/square.png"
+} 
