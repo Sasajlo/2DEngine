@@ -6,6 +6,7 @@
 #include <vector>
 #include <optional>
 #include <string>
+#include <unordered_map>
 
 class Window;
 
@@ -32,6 +33,18 @@ public:
     bool Initialize(Window* window);
     void Shutdown();
     void Render();
+    
+    // Sprite rendering methods
+    void RenderSprite(
+        const char* texturePath,
+        float* worldMatrix,
+        float* color,
+        float* size,
+        int sortingOrder,
+        bool flipX,
+        bool flipY
+    );
+    void SetCameraMatrices(float* viewMatrix, float* projectionMatrix);
     
 private:
     Window* m_window;
@@ -64,6 +77,52 @@ private:
     size_t m_currentFrame;
     static const int MAX_FRAMES_IN_FLIGHT = 2;
     
+    // Sprite rendering data
+    struct SpriteVertex {
+        float pos[2];
+        float texCoord[2];
+    };
+    
+    struct SpriteData {
+        std::string texturePath;
+        float worldMatrix[16];
+        float color[4];
+        float size[2];
+        int sortingOrder;
+        bool flipX;
+        bool flipY;
+    };
+    
+    std::vector<SpriteData> m_spriteQueue;
+    
+    // Camera matrices
+    float m_viewMatrix[16];
+    float m_projectionMatrix[16];
+    
+    // Texture management
+    std::unordered_map<std::string, VkImage> m_textures;
+    std::unordered_map<std::string, VkImageView> m_textureViews;
+    std::unordered_map<std::string, VkDeviceMemory> m_textureMemory;
+    VkSampler m_textureSampler;
+    
+    // Sprite rendering pipeline
+    VkPipeline m_spritePipeline;
+    VkPipelineLayout m_spritePipelineLayout;
+    VkDescriptorSetLayout m_spriteDescriptorSetLayout;
+    VkDescriptorPool m_spriteDescriptorPool;
+    std::vector<VkDescriptorSet> m_spriteDescriptorSets;
+    
+    // Uniform buffers
+    VkBuffer m_uniformBuffer;
+    VkDeviceMemory m_uniformBufferMemory;
+    void* m_uniformBufferMapped;
+    
+    // Vertex buffer for sprites
+    VkBuffer m_spriteVertexBuffer;
+    VkDeviceMemory m_spriteVertexBufferMemory;
+    VkBuffer m_spriteIndexBuffer;
+    VkDeviceMemory m_spriteIndexBufferMemory;
+    
     // Helper functions
     bool CreateInstance();
     bool CreateSurface();
@@ -88,4 +147,29 @@ private:
     
     std::vector<char> ReadFile(const std::string& filename);
     VkShaderModule CreateShaderModule(const std::vector<char>& code);
+    
+    // Texture loading functions
+    bool LoadTexture(const std::string& texturePath);
+    bool CreateTextureImage(const std::string& texturePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory);
+    bool CreateTextureImageView(VkImage textureImage, VkImageView& textureImageView);
+    bool CreateTextureSampler();
+    
+    // Sprite rendering functions
+    bool CreateSpriteRenderingPipeline();
+    bool CreateSpriteVertexBuffer();
+    bool CreateDescriptorSetLayout();
+    bool CreateUniformBuffer();
+    bool CreateDescriptorSets();
+    void UpdateUniformBuffer(uint32_t currentImage);
+    void RenderSpriteQueue(VkCommandBuffer commandBuffer, uint32_t imageIndex);
+    
+    // Helper methods for buffer operations
+    uint32_t FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties);
+    void CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size);
+    
+    // Helper methods for image operations
+    void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout);
+    void CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height);
+    VkCommandBuffer BeginSingleTimeCommands();
+    void EndSingleTimeCommands(VkCommandBuffer commandBuffer);
 }; 

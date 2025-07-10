@@ -28,5 +28,35 @@ namespace Engine
 
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern void GetWindowSize(out int width, out int height);
+        
+        // Time management
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void UpdateDeltaTime();
+        
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern float GetDeltaTime();
+        
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern double GetTime();
+        
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void ResetTime();
+        
+        // Sprite rendering
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void RenderSprite(
+            [MarshalAs(UnmanagedType.LPUTF8Str)] string texturePath,
+            [MarshalAs(UnmanagedType.LPArray, SizeConst = 16)] float[] worldMatrix,
+            [MarshalAs(UnmanagedType.LPArray, SizeConst = 4)] float[] color,
+            [MarshalAs(UnmanagedType.LPArray, SizeConst = 2)] float[] size,
+            int sortingOrder,
+            [MarshalAs(UnmanagedType.I1)] bool flipX,
+            [MarshalAs(UnmanagedType.I1)] bool flipY);
+            
+        // Camera
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void SetCameraMatrices(
+            [MarshalAs(UnmanagedType.LPArray, SizeConst = 16)] float[] viewMatrix,
+            [MarshalAs(UnmanagedType.LPArray, SizeConst = 16)] float[] projectionMatrix);
     }
 } 

@@ -1,10 +1,16 @@
+using System;
+using System.Threading;
+using Engine.Components;
+
 namespace Engine
 {
     public class SimpleEngine : IDisposable
     {
         private bool _initialized = false;
         private bool _disposed = false;
-
+        
+        public SceneManager sceneManager => SceneManager.Instance;
+        
         public bool Initialize(int width, int height, string title)
         {
             if (_initialized)
@@ -20,6 +26,20 @@ namespace Engine
             if (_initialized)
             {
                 Console.WriteLine("Engine initialized successfully");
+                
+                // Initialize identity matrices for camera (will be updated by SceneManager)
+                var identityMatrix = new float[16]
+                {
+                    1.0f, 0.0f, 0.0f, 0.0f,
+                    0.0f, 1.0f, 0.0f, 0.0f,
+                    0.0f, 0.0f, 1.0f, 0.0f,
+                    0.0f, 0.0f, 0.0f, 1.0f
+                };
+                
+                EngineCore.SetCameraMatrices(identityMatrix, identityMatrix);
+                
+                // Initialize time system
+                Time.Reset();
             }
             else
             {
@@ -38,14 +58,46 @@ namespace Engine
             }
 
             Console.WriteLine("Starting main loop...");
+            
+            // Unity-style lifecycle: Awake → Start → Update
+            sceneManager.AwakeAll();
+            sceneManager.activeScene?.Start();
+
+            // FPS display variables
+            float fpsUpdateTimer = 0.0f;
+            int frameCount = 0;
+            const float fpsUpdateInterval = 1.0f; // Update FPS display every second
+            string baseTitle = "2D Engine - ECS Demo";
 
             while (!EngineCore.ShouldClose())
             {
+                // Update delta time
+                Time.Update();
+                
                 EngineCore.PollEvents();
+                
+                // Update game logic (components use Time.deltaTime)
+                sceneManager.Update();
+                
+                // Render sprites
+                sceneManager.Render();
+                
+                // Render frame
                 EngineCore.Render();
                 
-                // Small delay to prevent 100% CPU usage in this simple example
-                Thread.Sleep(16); // ~60 FPS
+                // Update FPS display in window title
+                fpsUpdateTimer += Time.deltaTime;
+                ++frameCount;
+                if (fpsUpdateTimer >= fpsUpdateInterval)
+                {
+                    var fps = frameCount / fpsUpdateTimer;
+                    var newTitle = $"{baseTitle} - FPS: {fps:F1}";
+                    EngineCore.SetWindowTitle(newTitle);
+                    fpsUpdateTimer = 0.0f;
+                    frameCount = 0;
+                }
+                
+                // No more Thread.Sleep - deltaTime handles timing naturally
             }
 
             Console.WriteLine("Main loop ended");

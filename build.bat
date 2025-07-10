@@ -50,6 +50,22 @@ if %errorlevel% neq 0 (
     exit /b 1
 )
 
+:: Compile sprite vertex shader
+"Extern\VulkanSDK\1.4.313.1\Bin\glslc.exe" "Shaders\sprite.vert" -o "Build\shaders\sprite_vert.spv"
+if %errorlevel% neq 0 (
+    echo ERROR: Failed to compile sprite vertex shader!
+    pause
+    exit /b 1
+)
+
+:: Compile sprite fragment shader
+"Extern\VulkanSDK\1.4.313.1\Bin\glslc.exe" "Shaders\sprite.frag" -o "Build\shaders\sprite_frag.spv"
+if %errorlevel% neq 0 (
+    echo ERROR: Failed to compile sprite fragment shader!
+    pause
+    exit /b 1
+)
+
 echo Shaders compiled successfully!
 
 :: Build C++ Core (DLL)
@@ -144,6 +160,23 @@ copy "Engine\build\Engine.runtimeconfig.json" "Build\" >nul 2>&1
 copy "Engine\build\Engine.deps.json" "Build\" >nul 2>&1
 
 echo C# Engine files copied successfully!
+
+:: Copy Assets folder
+echo.
+echo Copying Assets...
+echo ========================================
+
+if exist "Assets" (
+    xcopy "Assets" "Build\Assets" /E /I /Y >nul 2>&1
+    if %errorlevel% neq 0 (
+        echo ERROR: Failed to copy Assets folder
+        pause
+        exit /b 1
+    )
+    echo Assets copied successfully!
+) else (
+    echo Warning: Assets folder not found - skipping asset copy
+)
 
 echo All files copied to Build directory successfully!
 

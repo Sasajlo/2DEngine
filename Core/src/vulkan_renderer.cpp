@@ -5,6 +5,13 @@
 #include <stdexcept>
 #include <algorithm>
 #include <set>
+#include <array>
+#include <cstddef>
+#include <cstring>
+
+// stb_image for texture loading
+#define STB_IMAGE_IMPLEMENTATION
+#include "../../Extern/stb_image.h"
 
 VulkanRenderer::VulkanRenderer() 
     : m_window(nullptr)
@@ -20,13 +27,33 @@ VulkanRenderer::VulkanRenderer()
     , m_pipelineLayout(VK_NULL_HANDLE)
     , m_graphicsPipeline(VK_NULL_HANDLE)
     , m_commandPool(VK_NULL_HANDLE)
-    , m_currentFrame(0) {
+    , m_currentFrame(0)
+    , m_spritePipeline(VK_NULL_HANDLE)
+    , m_spritePipelineLayout(VK_NULL_HANDLE)
+    , m_spriteDescriptorSetLayout(VK_NULL_HANDLE)
+    , m_spriteDescriptorPool(VK_NULL_HANDLE)
+    , m_uniformBuffer(VK_NULL_HANDLE)
+    , m_uniformBufferMemory(VK_NULL_HANDLE)
+    , m_uniformBufferMapped(nullptr)
+    , m_spriteVertexBuffer(VK_NULL_HANDLE)
+    , m_spriteVertexBufferMemory(VK_NULL_HANDLE)
+    , m_spriteIndexBuffer(VK_NULL_HANDLE)
+    , m_spriteIndexBufferMemory(VK_NULL_HANDLE)
+    , m_textureSampler(VK_NULL_HANDLE) {
     
     // Initialize vectors to avoid issues during shutdown
     m_imageAvailableSemaphores.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
     m_renderFinishedSemaphores.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
     m_inFlightFences.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
     m_commandBuffers.resize(MAX_FRAMES_IN_FLIGHT, VK_NULL_HANDLE);
+    
+    // Initialize camera matrices to identity
+    for (int i = 0; i < 16; i++) {
+        m_viewMatrix[i] = 0.0f;
+        m_projectionMatrix[i] = 0.0f;
+    }
+    m_viewMatrix[0] = m_viewMatrix[5] = m_viewMatrix[10] = m_viewMatrix[15] = 1.0f;
+    m_projectionMatrix[0] = m_projectionMatrix[5] = m_projectionMatrix[10] = m_projectionMatrix[15] = 1.0f;
 }
 
 VulkanRenderer::~VulkanRenderer() {
@@ -43,11 +70,16 @@ bool VulkanRenderer::Initialize(Window* window) {
     if (!CreateSwapChain()) return false;
     if (!CreateImageViews()) return false;
     if (!CreateRenderPass()) return false;
+    if (!CreateDescriptorSetLayout()) return false;
+    if (!CreateUniformBuffer()) return false;
+    if (!CreateTextureSampler()) return false;
     if (!CreateGraphicsPipeline()) return false;
     if (!CreateFramebuffers()) return false;
     if (!CreateCommandPool()) return false;
+    if (!CreateDescriptorSets()) return false;
     if (!CreateCommandBuffers()) return false;
     if (!CreateSyncObjects()) return false;
+    if (!CreateSpriteVertexBuffer()) return false;
     
     return true;
 }
@@ -55,6 +87,56 @@ bool VulkanRenderer::Initialize(Window* window) {
 void VulkanRenderer::Shutdown() {
     if (m_device != VK_NULL_HANDLE) {
         vkDeviceWaitIdle(m_device);
+        
+        // Clean up sprite resources
+        if (m_spriteDescriptorPool != VK_NULL_HANDLE) {
+            vkDestroyDescriptorPool(m_device, m_spriteDescriptorPool, nullptr);
+            m_spriteDescriptorPool = VK_NULL_HANDLE;
+        }
+        
+        if (m_spriteDescriptorSetLayout != VK_NULL_HANDLE) {
+            vkDestroyDescriptorSetLayout(m_device, m_spriteDescriptorSetLayout, nullptr);
+            m_spriteDescriptorSetLayout = VK_NULL_HANDLE;
+        }
+        
+        if (m_uniformBufferMapped) {
+            vkUnmapMemory(m_device, m_uniformBufferMemory);
+            m_uniformBufferMapped = nullptr;
+        }
+        
+        if (m_uniformBuffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(m_device, m_uniformBuffer, nullptr);
+            m_uniformBuffer = VK_NULL_HANDLE;
+        }
+        
+        if (m_uniformBufferMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(m_device, m_uniformBufferMemory, nullptr);
+            m_uniformBufferMemory = VK_NULL_HANDLE;
+        }
+        
+        // Clean up texture sampler
+        if (m_textureSampler != VK_NULL_HANDLE) {
+            vkDestroySampler(m_device, m_textureSampler, nullptr);
+            m_textureSampler = VK_NULL_HANDLE;
+        }
+        
+        // Clean up sprite buffers
+        if (m_spriteVertexBuffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(m_device, m_spriteVertexBuffer, nullptr);
+            m_spriteVertexBuffer = VK_NULL_HANDLE;
+        }
+        if (m_spriteVertexBufferMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(m_device, m_spriteVertexBufferMemory, nullptr);
+            m_spriteVertexBufferMemory = VK_NULL_HANDLE;
+        }
+        if (m_spriteIndexBuffer != VK_NULL_HANDLE) {
+            vkDestroyBuffer(m_device, m_spriteIndexBuffer, nullptr);
+            m_spriteIndexBuffer = VK_NULL_HANDLE;
+        }
+        if (m_spriteIndexBufferMemory != VK_NULL_HANDLE) {
+            vkFreeMemory(m_device, m_spriteIndexBufferMemory, nullptr);
+            m_spriteIndexBufferMemory = VK_NULL_HANDLE;
+        }
         
         // Clean up sync objects
         for (size_t i = 0; i < m_renderFinishedSemaphores.size() && i < MAX_FRAMES_IN_FLIGHT; i++) {
@@ -183,6 +265,9 @@ void VulkanRenderer::Render() {
     vkQueuePresentKHR(m_presentQueue, &presentInfo);
     
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
+    
+    // Clear sprite queue for next frame
+    m_spriteQueue.clear();
 }
 
 bool VulkanRenderer::CreateInstance() {
@@ -492,9 +577,9 @@ bool VulkanRenderer::CreateRenderPass() {
 }
 
 bool VulkanRenderer::CreateGraphicsPipeline() {
-    // Load compiled shader files
-    std::vector<char> vertShaderCode = ReadFile("shaders/triangle_vert.spv");
-    std::vector<char> fragShaderCode = ReadFile("shaders/triangle_frag.spv");
+    // Load compiled sprite shader files
+    std::vector<char> vertShaderCode = ReadFile("shaders/sprite_vert.spv");
+    std::vector<char> fragShaderCode = ReadFile("shaders/sprite_frag.spv");
     
     VkShaderModule vertShaderModule = CreateShaderModule(vertShaderCode);
     VkShaderModule fragShaderModule = CreateShaderModule(fragShaderCode);
@@ -515,11 +600,32 @@ bool VulkanRenderer::CreateGraphicsPipeline() {
     
     VkPipelineShaderStageCreateInfo shaderStages[] = {vertShaderStageInfo, fragShaderStageInfo};
     
-    // Vertex input - no vertices needed since we hardcode positions in shader
+    // Vertex input for sprites (position + texture coordinates)
+    VkVertexInputBindingDescription bindingDescription{};
+    bindingDescription.binding = 0;
+    bindingDescription.stride = sizeof(SpriteVertex);
+    bindingDescription.inputRate = VK_VERTEX_INPUT_RATE_VERTEX;
+    
+    std::array<VkVertexInputAttributeDescription, 2> attributeDescriptions{};
+    
+    // Position attribute
+    attributeDescriptions[0].binding = 0;
+    attributeDescriptions[0].location = 0;
+    attributeDescriptions[0].format = VK_FORMAT_R32G32_SFLOAT;
+    attributeDescriptions[0].offset = offsetof(SpriteVertex, pos);
+    
+    // Texture coordinate attribute
+    attributeDescriptions[1].binding = 0;
+    attributeDescriptions[1].location = 1;
+    attributeDescriptions[1].format = VK_FORMAT_R32G32_SFLOAT;
+    attributeDescriptions[1].offset = offsetof(SpriteVertex, texCoord);
+    
     VkPipelineVertexInputStateCreateInfo vertexInputInfo{};
     vertexInputInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
-    vertexInputInfo.vertexBindingDescriptionCount = 0;
-    vertexInputInfo.vertexAttributeDescriptionCount = 0;
+    vertexInputInfo.vertexBindingDescriptionCount = 1;
+    vertexInputInfo.pVertexBindingDescriptions = &bindingDescription;
+    vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size());
+    vertexInputInfo.pVertexAttributeDescriptions = attributeDescriptions.data();
     
     // Input assembly
     VkPipelineInputAssemblyStateCreateInfo inputAssembly{};
@@ -580,11 +686,18 @@ bool VulkanRenderer::CreateGraphicsPipeline() {
     colorBlending.blendConstants[2] = 0.0f;
     colorBlending.blendConstants[3] = 0.0f;
     
-    // Pipeline layout
+    // Pipeline layout with push constants
+    VkPushConstantRange pushConstantRange{};
+    pushConstantRange.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    pushConstantRange.offset = 0;
+    pushConstantRange.size = sizeof(float) * (16 + 4 + 2); // mat4 model + vec4 color + vec2 size
+    
     VkPipelineLayoutCreateInfo pipelineLayoutInfo{};
     pipelineLayoutInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-    pipelineLayoutInfo.setLayoutCount = 0;
-    pipelineLayoutInfo.pushConstantRangeCount = 0;
+    pipelineLayoutInfo.setLayoutCount = 1;
+    pipelineLayoutInfo.pSetLayouts = &m_spriteDescriptorSetLayout;
+    pipelineLayoutInfo.pushConstantRangeCount = 1;
+    pipelineLayoutInfo.pPushConstantRanges = &pushConstantRange;
     
     if (vkCreatePipelineLayout(m_device, &pipelineLayoutInfo, nullptr, &m_pipelineLayout) != VK_SUCCESS) {
         vkDestroyShaderModule(m_device, fragShaderModule, nullptr);
@@ -716,8 +829,65 @@ void VulkanRenderer::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t
     // Bind the graphics pipeline
     vkCmdBindPipeline(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_graphicsPipeline);
     
-    // Draw the triangle (3 vertices, 1 instance, starting from vertex 0, instance 0)
-    vkCmdDraw(commandBuffer, 3, 1, 0, 0);
+    // Bind descriptor sets (uniform buffer for camera matrices)
+    vkCmdBindDescriptorSets(commandBuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, m_pipelineLayout, 
+                           0, 1, &m_spriteDescriptorSets[0], 0, nullptr);
+    
+    // Bind vertex buffer
+    VkBuffer vertexBuffers[] = {m_spriteVertexBuffer};
+    VkDeviceSize offsets[] = {0};
+    vkCmdBindVertexBuffers(commandBuffer, 0, 1, vertexBuffers, offsets);
+    
+    // Bind index buffer
+    vkCmdBindIndexBuffer(commandBuffer, m_spriteIndexBuffer, 0, VK_INDEX_TYPE_UINT16);
+    
+    // Render sprites from the sprite queue
+    for (size_t i = 0; i < m_spriteQueue.size(); i++) {
+        const auto& sprite = m_spriteQueue[i];
+        
+        // Find the texture for this sprite
+        auto textureIt = m_textureViews.find(sprite.texturePath);
+        if (textureIt != m_textureViews.end()) {
+            // Update descriptor set with the texture for this sprite
+            VkDescriptorImageInfo imageInfo{};
+            imageInfo.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            imageInfo.imageView = textureIt->second;
+            imageInfo.sampler = m_textureSampler;
+
+            VkWriteDescriptorSet descriptorWrite{};
+            descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptorWrite.dstSet = m_spriteDescriptorSets[0];
+            descriptorWrite.dstBinding = 1;
+            descriptorWrite.dstArrayElement = 0;
+            descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+            descriptorWrite.descriptorCount = 1;
+            descriptorWrite.pImageInfo = &imageInfo;
+
+            vkUpdateDescriptorSets(m_device, 1, &descriptorWrite, 0, nullptr);
+        }
+        
+        // Prepare push constants: model matrix (16 floats) + color (4 floats) + size (2 floats)
+        float pushData[22];
+        
+        // Copy model matrix (16 floats)
+        memcpy(pushData, sprite.worldMatrix, sizeof(float) * 16);
+        
+        // Copy color (4 floats)
+        memcpy(pushData + 16, sprite.color, sizeof(float) * 4);
+        
+        // Copy size (2 floats)
+        memcpy(pushData + 20, sprite.size, sizeof(float) * 2);
+        
+        // Push constants for this sprite
+        vkCmdPushConstants(commandBuffer, m_pipelineLayout, VK_SHADER_STAGE_VERTEX_BIT, 
+                          0, sizeof(pushData), pushData);
+        
+        // Draw indexed quad (6 indices for 2 triangles)
+        vkCmdDrawIndexed(commandBuffer, 6, 1, 0, 0, 0);
+    }
+    
+    // If no sprites, don't draw anything
+    // (removed the fallback quad since we want to only draw what's requested)
     
     vkCmdEndRenderPass(commandBuffer);
     
@@ -756,4 +926,614 @@ VkShaderModule VulkanRenderer::CreateShaderModule(const std::vector<char>& code)
     }
     
     return shaderModule;
+}
+
+void VulkanRenderer::RenderSprite(
+    const char* texturePath,
+    float* worldMatrix,
+    float* color,
+    float* size,
+    int sortingOrder,
+    bool flipX,
+    bool flipY
+) {
+    if (texturePath && worldMatrix && color && size) {
+        // Load the texture if it hasn't been loaded yet
+        std::string texturePathStr(texturePath);
+        if (!LoadTexture(texturePathStr)) {
+            std::cerr << "Failed to load texture: " << texturePath << std::endl;
+            return;
+        }
+        
+        SpriteData sprite;
+        sprite.texturePath = texturePathStr;
+        
+        // Copy matrices and data
+        for (int i = 0; i < 16; i++) {
+            sprite.worldMatrix[i] = worldMatrix[i];
+        }
+        for (int i = 0; i < 4; i++) {
+            sprite.color[i] = color[i];
+        }
+        for (int i = 0; i < 2; i++) {
+            sprite.size[i] = size[i];
+        }
+        
+        sprite.sortingOrder = sortingOrder;
+        sprite.flipX = flipX;
+        sprite.flipY = flipY;
+        
+        m_spriteQueue.push_back(sprite);
+    }
+}
+
+void VulkanRenderer::SetCameraMatrices(float* viewMatrix, float* projectionMatrix) {
+    if (viewMatrix && projectionMatrix && m_uniformBufferMapped) {
+        // Store the matrices locally
+        for (int i = 0; i < 16; i++) {
+            m_viewMatrix[i] = viewMatrix[i];
+            m_projectionMatrix[i] = projectionMatrix[i];
+        }
+        
+        // Write matrices to uniform buffer
+        // Format: view matrix (16 floats) + projection matrix (16 floats)
+        float* uboData = static_cast<float*>(m_uniformBufferMapped);
+        
+        // Copy view matrix
+        memcpy(uboData, m_viewMatrix, sizeof(float) * 16);
+        
+        // Copy projection matrix
+        memcpy(uboData + 16, m_projectionMatrix, sizeof(float) * 16);
+    }
+}
+
+bool VulkanRenderer::CreateSpriteVertexBuffer() {
+    // Create quad vertices for sprite rendering
+    std::vector<SpriteVertex> vertices = {
+        {{-0.5f, -0.5f}, {0.0f, 0.0f}}, // bottom left
+        {{ 0.5f, -0.5f}, {1.0f, 0.0f}}, // bottom right
+        {{ 0.5f,  0.5f}, {1.0f, 1.0f}}, // top right
+        {{-0.5f,  0.5f}, {0.0f, 1.0f}}  // top left
+    };
+    
+    std::vector<uint16_t> indices = {
+        0, 1, 2, 2, 3, 0
+    };
+    
+    // Create vertex buffer
+    VkDeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+    
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+    
+    // Create staging buffer
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = bufferSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+    
+    if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &stagingBuffer) != VK_SUCCESS) {
+        return false;
+    }
+    
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(m_device, stagingBuffer, &memRequirements);
+    
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    
+    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &stagingBufferMemory) != VK_SUCCESS) {
+        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+        return false;
+    }
+    
+    vkBindBufferMemory(m_device, stagingBuffer, stagingBufferMemory, 0);
+    
+    // Copy vertex data to staging buffer
+    void* data;
+    vkMapMemory(m_device, stagingBufferMemory, 0, bufferSize, 0, &data);
+    memcpy(data, vertices.data(), (size_t) bufferSize);
+    vkUnmapMemory(m_device, stagingBufferMemory);
+    
+    // Create vertex buffer
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+    
+    if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_spriteVertexBuffer) != VK_SUCCESS) {
+        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+        vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+        return false;
+    }
+    
+    vkGetBufferMemoryRequirements(m_device, m_spriteVertexBuffer, &memRequirements);
+    
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    
+    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &m_spriteVertexBufferMemory) != VK_SUCCESS) {
+        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+        vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+        vkDestroyBuffer(m_device, m_spriteVertexBuffer, nullptr);
+        return false;
+    }
+    
+    vkBindBufferMemory(m_device, m_spriteVertexBuffer, m_spriteVertexBufferMemory, 0);
+    
+    // Copy data from staging buffer to vertex buffer
+    CopyBuffer(stagingBuffer, m_spriteVertexBuffer, bufferSize);
+    
+    // Clean up staging buffer
+    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+    
+    // Create index buffer
+    VkDeviceSize indexBufferSize = sizeof(indices[0]) * indices.size();
+    
+    // Create staging buffer for indices
+    bufferInfo.size = indexBufferSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    
+    if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &stagingBuffer) != VK_SUCCESS) {
+        return false;
+    }
+    
+    vkGetBufferMemoryRequirements(m_device, stagingBuffer, &memRequirements);
+    
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+    
+    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &stagingBufferMemory) != VK_SUCCESS) {
+        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+        return false;
+    }
+    
+    vkBindBufferMemory(m_device, stagingBuffer, stagingBufferMemory, 0);
+    
+    // Copy index data to staging buffer
+    vkMapMemory(m_device, stagingBufferMemory, 0, indexBufferSize, 0, &data);
+    memcpy(data, indices.data(), (size_t) indexBufferSize);
+    vkUnmapMemory(m_device, stagingBufferMemory);
+    
+    // Create index buffer
+    bufferInfo.size = indexBufferSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT | VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+    
+    if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_spriteIndexBuffer) != VK_SUCCESS) {
+        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+        vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+        return false;
+    }
+    
+    vkGetBufferMemoryRequirements(m_device, m_spriteIndexBuffer, &memRequirements);
+    
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+    
+    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &m_spriteIndexBufferMemory) != VK_SUCCESS) {
+        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+        vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+        vkDestroyBuffer(m_device, m_spriteIndexBuffer, nullptr);
+        return false;
+    }
+    
+    vkBindBufferMemory(m_device, m_spriteIndexBuffer, m_spriteIndexBufferMemory, 0);
+    
+    // Copy data from staging buffer to index buffer
+    CopyBuffer(stagingBuffer, m_spriteIndexBuffer, indexBufferSize);
+    
+    // Clean up staging buffer
+    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+    
+    return true;
+}
+
+bool VulkanRenderer::CreateDescriptorSetLayout() {
+    // Uniform buffer binding (binding 0)
+    VkDescriptorSetLayoutBinding uboLayoutBinding{};
+    uboLayoutBinding.binding = 0;
+    uboLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    uboLayoutBinding.descriptorCount = 1;
+    uboLayoutBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT;
+    uboLayoutBinding.pImmutableSamplers = nullptr;
+
+    // Texture sampler binding (binding 1)
+    VkDescriptorSetLayoutBinding samplerLayoutBinding{};
+    samplerLayoutBinding.binding = 1;
+    samplerLayoutBinding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    samplerLayoutBinding.descriptorCount = 1;
+    samplerLayoutBinding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+    samplerLayoutBinding.pImmutableSamplers = nullptr;
+
+    std::array<VkDescriptorSetLayoutBinding, 2> bindings = {uboLayoutBinding, samplerLayoutBinding};
+
+    VkDescriptorSetLayoutCreateInfo layoutInfo{};
+    layoutInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+    layoutInfo.bindingCount = static_cast<uint32_t>(bindings.size());
+    layoutInfo.pBindings = bindings.data();
+
+    return vkCreateDescriptorSetLayout(m_device, &layoutInfo, nullptr, &m_spriteDescriptorSetLayout) == VK_SUCCESS;
+}
+
+bool VulkanRenderer::CreateUniformBuffer() {
+    VkDeviceSize bufferSize = sizeof(float) * 32; // 2 mat4 matrices (view + projection)
+
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = bufferSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &m_uniformBuffer) != VK_SUCCESS) {
+        return false;
+    }
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(m_device, m_uniformBuffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &m_uniformBufferMemory) != VK_SUCCESS) {
+        vkDestroyBuffer(m_device, m_uniformBuffer, nullptr);
+        return false;
+    }
+
+    vkBindBufferMemory(m_device, m_uniformBuffer, m_uniformBufferMemory, 0);
+
+    // Map the buffer memory so we can write to it
+    vkMapMemory(m_device, m_uniformBufferMemory, 0, bufferSize, 0, &m_uniformBufferMapped);
+
+    return true;
+}
+
+bool VulkanRenderer::CreateDescriptorSets() {
+    // Create descriptor pool
+    std::array<VkDescriptorPoolSize, 2> poolSizes{};
+    poolSizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    poolSizes[0].descriptorCount = 1;
+    poolSizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+    poolSizes[1].descriptorCount = 1;
+
+    VkDescriptorPoolCreateInfo poolInfo{};
+    poolInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+    poolInfo.poolSizeCount = static_cast<uint32_t>(poolSizes.size());
+    poolInfo.pPoolSizes = poolSizes.data();
+    poolInfo.maxSets = 1;
+
+    if (vkCreateDescriptorPool(m_device, &poolInfo, nullptr, &m_spriteDescriptorPool) != VK_SUCCESS) {
+        return false;
+    }
+
+    // Allocate descriptor set
+    VkDescriptorSetAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+    allocInfo.descriptorPool = m_spriteDescriptorPool;
+    allocInfo.descriptorSetCount = 1;
+    allocInfo.pSetLayouts = &m_spriteDescriptorSetLayout;
+
+    m_spriteDescriptorSets.resize(1);
+    if (vkAllocateDescriptorSets(m_device, &allocInfo, m_spriteDescriptorSets.data()) != VK_SUCCESS) {
+        return false;
+    }
+
+    // Update descriptor set with uniform buffer
+    VkDescriptorBufferInfo bufferInfo{};
+    bufferInfo.buffer = m_uniformBuffer;
+    bufferInfo.offset = 0;
+    bufferInfo.range = sizeof(float) * 32;
+
+    VkWriteDescriptorSet descriptorWrite{};
+    descriptorWrite.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+    descriptorWrite.dstSet = m_spriteDescriptorSets[0];
+    descriptorWrite.dstBinding = 0;
+    descriptorWrite.dstArrayElement = 0;
+    descriptorWrite.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+    descriptorWrite.descriptorCount = 1;
+    descriptorWrite.pBufferInfo = &bufferInfo;
+
+    vkUpdateDescriptorSets(m_device, 1, &descriptorWrite, 0, nullptr);
+
+    return true;
+}
+
+uint32_t VulkanRenderer::FindMemoryType(uint32_t typeFilter, VkMemoryPropertyFlags properties) {
+    VkPhysicalDeviceMemoryProperties memProperties;
+    vkGetPhysicalDeviceMemoryProperties(m_physicalDevice, &memProperties);
+    
+    for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+        if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+            return i;
+        }
+    }
+    
+    throw std::runtime_error("failed to find suitable memory type!");
+}
+
+void VulkanRenderer::CopyBuffer(VkBuffer srcBuffer, VkBuffer dstBuffer, VkDeviceSize size) {
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = m_commandPool;
+    allocInfo.commandBufferCount = 1;
+    
+    VkCommandBuffer commandBuffer;
+    vkAllocateCommandBuffers(m_device, &allocInfo, &commandBuffer);
+    
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+    
+    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+    
+    VkBufferCopy copyRegion{};
+    copyRegion.size = size;
+    vkCmdCopyBuffer(commandBuffer, srcBuffer, dstBuffer, 1, &copyRegion);
+    
+    vkEndCommandBuffer(commandBuffer);
+    
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+    
+    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(m_graphicsQueue);
+    
+    vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
+} 
+
+// Texture loading functions
+bool VulkanRenderer::LoadTexture(const std::string& texturePath) {
+    // Check if texture is already loaded
+    if (m_textures.find(texturePath) != m_textures.end()) {
+        return true;
+    }
+
+    VkImage textureImage;
+    VkDeviceMemory textureImageMemory;
+    VkImageView textureImageView;
+
+    if (!CreateTextureImage(texturePath, textureImage, textureImageMemory)) {
+        return false;
+    }
+
+    if (!CreateTextureImageView(textureImage, textureImageView)) {
+        vkDestroyImage(m_device, textureImage, nullptr);
+        vkFreeMemory(m_device, textureImageMemory, nullptr);
+        return false;
+    }
+
+    // Store texture resources
+    m_textures[texturePath] = textureImage;
+    m_textureViews[texturePath] = textureImageView;
+    m_textureMemory[texturePath] = textureImageMemory;
+
+    return true;
+}
+
+bool VulkanRenderer::CreateTextureImage(const std::string& texturePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory) {
+    int texWidth, texHeight, texChannels;
+    stbi_uc* pixels = stbi_load(texturePath.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+    VkDeviceSize imageSize = texWidth * texHeight * 4;
+
+    if (!pixels) {
+        std::cerr << "Failed to load texture image: " << texturePath << std::endl;
+        return false;
+    }
+
+    VkBuffer stagingBuffer;
+    VkDeviceMemory stagingBufferMemory;
+
+    // Create staging buffer
+    VkBufferCreateInfo bufferInfo{};
+    bufferInfo.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+    bufferInfo.size = imageSize;
+    bufferInfo.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+    bufferInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateBuffer(m_device, &bufferInfo, nullptr, &stagingBuffer) != VK_SUCCESS) {
+        stbi_image_free(pixels);
+        return false;
+    }
+
+    VkMemoryRequirements memRequirements;
+    vkGetBufferMemoryRequirements(m_device, stagingBuffer, &memRequirements);
+
+    VkMemoryAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &stagingBufferMemory) != VK_SUCCESS) {
+        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+        stbi_image_free(pixels);
+        return false;
+    }
+
+    vkBindBufferMemory(m_device, stagingBuffer, stagingBufferMemory, 0);
+
+    void* data;
+    vkMapMemory(m_device, stagingBufferMemory, 0, imageSize, 0, &data);
+    memcpy(data, pixels, static_cast<size_t>(imageSize));
+    vkUnmapMemory(m_device, stagingBufferMemory);
+
+    stbi_image_free(pixels);
+
+    // Create image
+    VkImageCreateInfo imageInfo{};
+    imageInfo.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+    imageInfo.imageType = VK_IMAGE_TYPE_2D;
+    imageInfo.extent.width = texWidth;
+    imageInfo.extent.height = texHeight;
+    imageInfo.extent.depth = 1;
+    imageInfo.mipLevels = 1;
+    imageInfo.arrayLayers = 1;
+    imageInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    imageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+    imageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    imageInfo.usage = VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT;
+    imageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+    imageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+    if (vkCreateImage(m_device, &imageInfo, nullptr, &textureImage) != VK_SUCCESS) {
+        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+        vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+        return false;
+    }
+
+    vkGetImageMemoryRequirements(m_device, textureImage, &memRequirements);
+
+    allocInfo.allocationSize = memRequirements.size;
+    allocInfo.memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+    if (vkAllocateMemory(m_device, &allocInfo, nullptr, &textureImageMemory) != VK_SUCCESS) {
+        vkDestroyImage(m_device, textureImage, nullptr);
+        vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+        vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+        return false;
+    }
+
+    vkBindImageMemory(m_device, textureImage, textureImageMemory, 0);
+
+    // Transition image layout and copy buffer to image
+    TransitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL);
+    CopyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+    TransitionImageLayout(textureImage, VK_FORMAT_R8G8B8A8_SRGB, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+
+    vkDestroyBuffer(m_device, stagingBuffer, nullptr);
+    vkFreeMemory(m_device, stagingBufferMemory, nullptr);
+
+    return true;
+}
+
+bool VulkanRenderer::CreateTextureImageView(VkImage textureImage, VkImageView& textureImageView) {
+    VkImageViewCreateInfo viewInfo{};
+    viewInfo.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+    viewInfo.image = textureImage;
+    viewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+    viewInfo.format = VK_FORMAT_R8G8B8A8_SRGB;
+    viewInfo.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+
+    return vkCreateImageView(m_device, &viewInfo, nullptr, &textureImageView) == VK_SUCCESS;
+}
+
+bool VulkanRenderer::CreateTextureSampler() {
+    VkSamplerCreateInfo samplerInfo{};
+    samplerInfo.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+    samplerInfo.magFilter = VK_FILTER_NEAREST;
+    samplerInfo.minFilter = VK_FILTER_NEAREST;
+    samplerInfo.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+    samplerInfo.anisotropyEnable = VK_FALSE;
+    samplerInfo.maxAnisotropy = 1.0f;
+    samplerInfo.borderColor = VK_BORDER_COLOR_INT_OPAQUE_BLACK;
+    samplerInfo.unnormalizedCoordinates = VK_FALSE;
+    samplerInfo.compareEnable = VK_FALSE;
+    samplerInfo.compareOp = VK_COMPARE_OP_ALWAYS;
+    samplerInfo.mipmapMode = VK_SAMPLER_MIPMAP_MODE_NEAREST;
+    samplerInfo.mipLodBias = 0.0f;
+    samplerInfo.minLod = 0.0f;
+    samplerInfo.maxLod = 0.0f;
+
+    return vkCreateSampler(m_device, &samplerInfo, nullptr, &m_textureSampler) == VK_SUCCESS;
+}
+
+void VulkanRenderer::TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout oldLayout, VkImageLayout newLayout) {
+    VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+
+    VkImageMemoryBarrier barrier{};
+    barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+    barrier.oldLayout = oldLayout;
+    barrier.newLayout = newLayout;
+    barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+    barrier.image = image;
+    barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.subresourceRange.layerCount = 1;
+
+    VkPipelineStageFlags sourceStage;
+    VkPipelineStageFlags destinationStage;
+
+    if (oldLayout == VK_IMAGE_LAYOUT_UNDEFINED && newLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL) {
+        barrier.srcAccessMask = 0;
+        barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        sourceStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+        destinationStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    } else if (oldLayout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && newLayout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) {
+        barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+        barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+        sourceStage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        destinationStage = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+    } else {
+        throw std::invalid_argument("unsupported layout transition!");
+    }
+
+    vkCmdPipelineBarrier(commandBuffer, sourceStage, destinationStage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+    EndSingleTimeCommands(commandBuffer);
+}
+
+void VulkanRenderer::CopyBufferToImage(VkBuffer buffer, VkImage image, uint32_t width, uint32_t height) {
+    VkCommandBuffer commandBuffer = BeginSingleTimeCommands();
+
+    VkBufferImageCopy region{};
+    region.bufferOffset = 0;
+    region.bufferRowLength = 0;
+    region.bufferImageHeight = 0;
+    region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+    region.imageSubresource.mipLevel = 0;
+    region.imageSubresource.baseArrayLayer = 0;
+    region.imageSubresource.layerCount = 1;
+    region.imageOffset = {0, 0, 0};
+    region.imageExtent = {width, height, 1};
+
+    vkCmdCopyBufferToImage(commandBuffer, buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+    EndSingleTimeCommands(commandBuffer);
+}
+
+VkCommandBuffer VulkanRenderer::BeginSingleTimeCommands() {
+    VkCommandBufferAllocateInfo allocInfo{};
+    allocInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+    allocInfo.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+    allocInfo.commandPool = m_commandPool;
+    allocInfo.commandBufferCount = 1;
+
+    VkCommandBuffer commandBuffer;
+    vkAllocateCommandBuffers(m_device, &allocInfo, &commandBuffer);
+
+    VkCommandBufferBeginInfo beginInfo{};
+    beginInfo.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+    beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+    vkBeginCommandBuffer(commandBuffer, &beginInfo);
+
+    return commandBuffer;
+}
+
+void VulkanRenderer::EndSingleTimeCommands(VkCommandBuffer commandBuffer) {
+    vkEndCommandBuffer(commandBuffer);
+
+    VkSubmitInfo submitInfo{};
+    submitInfo.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = &commandBuffer;
+
+    vkQueueSubmit(m_graphicsQueue, 1, &submitInfo, VK_NULL_HANDLE);
+    vkQueueWaitIdle(m_graphicsQueue);
+
+    vkFreeCommandBuffers(m_device, m_commandPool, 1, &commandBuffer);
 } 
