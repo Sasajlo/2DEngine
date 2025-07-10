@@ -29,6 +29,28 @@ namespace Engine
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern void GetWindowSize(out int width, out int height);
         
+        // Input handling
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool IsKeyPressed(int keyCode);
+        
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool IsKeyHeld(int keyCode);
+        
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        [return: MarshalAs(UnmanagedType.I1)]
+        public static extern bool IsKeyReleased(int keyCode);
+        
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern float GetMouseScrollDelta();
+        
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void ResetMouseScrollDelta();
+        
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void GetMousePosition(out float x, out float y);
+        
         // Time management
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern void UpdateDeltaTime();

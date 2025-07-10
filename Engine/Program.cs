@@ -29,6 +29,11 @@ namespace Engine
             CreateDemoScene(engine);
 
             Console.WriteLine("Demo scene created. Window should now be visible. Close it to exit.");
+            Console.WriteLine();
+            Console.WriteLine("Camera Controls:");
+            Console.WriteLine("  WASD         - Move camera (speed scales with zoom)");
+            Console.WriteLine("  Mouse Scroll - Smooth zoom in/out (towards mouse cursor)");
+            Console.WriteLine();
             
             // Run the main loop
             engine.Run();
@@ -51,6 +56,13 @@ namespace Engine
             var camera = cameraObject.AddComponent<Camera>();
             camera.orthographicSize = 5.0f;
             camera.backgroundColor = new Vector4(0.2f, 0.3f, 0.4f, 1.0f); // Nice blue background
+            
+            // Add camera controller for WASD movement and mouse scroll zoom
+            var cameraController = cameraObject.AddComponent<CameraController>();
+            cameraController.moveSpeed = 1.0f; // Base movement speed (scaled by zoom level)
+            cameraController.zoomSpeed = 0.15f; // Smooth percentage-based zoom (15% per scroll)
+            cameraController.minZoom = 1.0f;
+            cameraController.maxZoom = 15.0f;
             
             // Create sprite object
             var spriteObject = scene.CreateGameObject("Sprite");

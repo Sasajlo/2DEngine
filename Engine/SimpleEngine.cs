@@ -79,6 +79,9 @@ namespace Engine
                 // Update game logic (components use Time.deltaTime)
                 sceneManager.Update();
                 
+                // Reset mouse scroll delta after game logic has had a chance to read it
+                Input.ResetMouseScrollDelta();
+                
                 // Render sprites
                 sceneManager.Render();
                 

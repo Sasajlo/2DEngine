@@ -20,6 +20,14 @@ extern "C" {
     ENGINE_API void SetWindowTitle(const char* title);
     ENGINE_API void GetWindowSize(int* width, int* height);
     
+    // Input handling
+    ENGINE_API bool IsKeyPressed(int keyCode);
+    ENGINE_API bool IsKeyHeld(int keyCode);
+    ENGINE_API bool IsKeyReleased(int keyCode);
+    ENGINE_API float GetMouseScrollDelta();
+    ENGINE_API void ResetMouseScrollDelta();
+    ENGINE_API void GetMousePosition(float* x, float* y);
+    
     // Time management
     ENGINE_API void UpdateDeltaTime();
     ENGINE_API float GetDeltaTime();

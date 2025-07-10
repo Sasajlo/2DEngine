@@ -2,6 +2,8 @@
 #include "window.h"
 #include "vulkan_renderer.h"
 #include <memory>
+#include <unordered_map>
+#include <unordered_set>
 
 static std::unique_ptr<Window> g_window;
 static std::unique_ptr<VulkanRenderer> g_renderer;
@@ -11,6 +13,20 @@ static double g_currentTime = 0.0;
 static double g_lastTime = 0.0;
 static float g_deltaTime = 0.0f;
 static double g_startTime = 0.0;
+
+// Input state tracking
+static std::unordered_set<int> g_keysPressed;     // Keys pressed this frame
+static std::unordered_set<int> g_keysHeld;        // Keys currently held down
+static std::unordered_set<int> g_keysReleased;    // Keys released this frame
+static std::unordered_map<int, bool> g_keyStates; // Current state of all keys
+
+// Mouse scroll tracking
+static float g_mouseScrollDelta = 0.0f;
+
+// GLFW scroll callback
+void scroll_callback(GLFWwindow* window, double xoffset, double yoffset) {
+    g_mouseScrollDelta += static_cast<float>(yoffset);
+}
 
 extern "C" {
     ENGINE_API bool InitializeEngine(int width, int height, const char* title) {
@@ -35,6 +51,9 @@ extern "C" {
                 glfwTerminate();
                 return false;
             }
+            
+            // Set up input callbacks
+            glfwSetScrollCallback(g_window->GetHandle(), scroll_callback);
             
             return true;
         } catch (...) {
@@ -80,7 +99,40 @@ extern "C" {
     ENGINE_API void PollEvents() {
         try {
             if (g_window) {
+                // Clear frame-specific input states
+                g_keysPressed.clear();
+                g_keysReleased.clear();
+                
+                // Poll GLFW events
                 g_window->PollEvents();
+                
+                // Update input states for common keys
+                static const int commonKeys[] = {
+                    GLFW_KEY_W, GLFW_KEY_A, GLFW_KEY_S, GLFW_KEY_D,
+                    GLFW_KEY_Q, GLFW_KEY_E, GLFW_KEY_SPACE, GLFW_KEY_LEFT_SHIFT,
+                    GLFW_KEY_LEFT_CONTROL, GLFW_KEY_ESCAPE, GLFW_KEY_ENTER,
+                    GLFW_KEY_UP, GLFW_KEY_DOWN, GLFW_KEY_LEFT, GLFW_KEY_RIGHT
+                };
+                
+                for (int keyCode : commonKeys) {
+                    bool currentState = glfwGetKey(g_window->GetHandle(), keyCode) == GLFW_PRESS;
+                    bool previousState = g_keyStates[keyCode];
+                    
+                    if (currentState && !previousState) {
+                        // Key was just pressed
+                        g_keysPressed.insert(keyCode);
+                        g_keysHeld.insert(keyCode);
+                    } else if (!currentState && previousState) {
+                        // Key was just released
+                        g_keysReleased.insert(keyCode);
+                        g_keysHeld.erase(keyCode);
+                    }
+                    
+                    g_keyStates[keyCode] = currentState;
+                }
+                
+                // Note: Mouse scroll delta is NOT reset here as it needs to be 
+                // read by the game code before being reset
             }
         } catch (...) {
             // Ignore polling errors
@@ -106,6 +158,39 @@ extern "C" {
     ENGINE_API void GetWindowSize(int* width, int* height) {
         if (g_window && width && height) {
             g_window->GetSize(*width, *height);
+        }
+    }
+    
+    // Input handling functions
+    ENGINE_API bool IsKeyPressed(int keyCode) {
+        return g_keysPressed.count(keyCode) > 0;
+    }
+    
+    ENGINE_API bool IsKeyHeld(int keyCode) {
+        return g_keysHeld.count(keyCode) > 0;
+    }
+    
+    ENGINE_API bool IsKeyReleased(int keyCode) {
+        return g_keysReleased.count(keyCode) > 0;
+    }
+    
+    ENGINE_API float GetMouseScrollDelta() {
+        return g_mouseScrollDelta;
+    }
+    
+    ENGINE_API void ResetMouseScrollDelta() {
+        g_mouseScrollDelta = 0.0f;
+    }
+    
+    ENGINE_API void GetMousePosition(float* x, float* y) {
+        if (g_window && x && y) {
+            double mouseX, mouseY;
+            glfwGetCursorPos(g_window->GetHandle(), &mouseX, &mouseY);
+            *x = static_cast<float>(mouseX);
+            *y = static_cast<float>(mouseY);
+        } else {
+            if (x) *x = 0.0f;
+            if (y) *y = 0.0f;
         }
     }
     
