@@ -75,13 +75,13 @@ namespace Engine.Components
             var moveVector = Vector3.Zero;
             
             // WASD movement (camera movement to show desired view direction)
-            if (Input.GetKey(Input.KeyCode.W)) // W - Show up (move camera down)
+            if (Input.IsKeyHeld(Input.KeyCode.W)) // W - Show up (move camera down)
                 moveVector.Y -= 1.0f;
-            if (Input.GetKey(Input.KeyCode.S)) // S - Show down (move camera up)  
+            if (Input.IsKeyHeld(Input.KeyCode.S)) // S - Show down (move camera up)  
                 moveVector.Y += 1.0f;
-            if (Input.GetKey(Input.KeyCode.A)) // A - Show left (move camera left)
+            if (Input.IsKeyHeld(Input.KeyCode.A)) // A - Show left (move camera left)
                 moveVector.X -= 1.0f;
-            if (Input.GetKey(Input.KeyCode.D)) // D - Show right (move camera right)
+            if (Input.IsKeyHeld(Input.KeyCode.D)) // D - Show right (move camera right)
                 moveVector.X += 1.0f;
             
             // Apply movement with speed and deltaTime

@@ -76,6 +76,9 @@ namespace Engine
                 
                 EngineCore.PollEvents();
                 
+                // Update debug system
+                DebugSystem.Update();
+                
                 // Update game logic (components use Time.deltaTime)
                 sceneManager.Update();
                 

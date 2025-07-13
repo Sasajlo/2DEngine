@@ -26,12 +26,14 @@ namespace Engine
             public const int Down = 264;
             public const int Left = 263;
             public const int Right = 262;
+            public const int H = 72; // GLFW_KEY_H
+            public const int F12 = 301;
         }
         
         /// <summary>
         /// Returns true during the frame the user starts pressing down the key
         /// </summary>
-        public static bool GetKeyDown(int keyCode)
+        public static bool IsKeyPressed(int keyCode)
         {
             return EngineCore.IsKeyPressed(keyCode);
         }
@@ -39,7 +41,7 @@ namespace Engine
         /// <summary>
         /// Returns true while the user holds down the key
         /// </summary>
-        public static bool GetKey(int keyCode)
+        public static bool IsKeyHeld(int keyCode)
         {
             return EngineCore.IsKeyHeld(keyCode);
         }
@@ -47,7 +49,7 @@ namespace Engine
         /// <summary>
         /// Returns true during the frame the user releases the key
         /// </summary>
-        public static bool GetKeyUp(int keyCode)
+        public static bool IsKeyReleased(int keyCode)
         {
             return EngineCore.IsKeyReleased(keyCode);
         }
@@ -78,9 +80,9 @@ namespace Engine
         }
         
         // Convenience methods for common keys
-        public static bool GetKeyDown(string keyName) => GetKeyDown(GetKeyCodeFromName(keyName));
-        public static bool GetKey(string keyName) => GetKey(GetKeyCodeFromName(keyName));
-        public static bool GetKeyUp(string keyName) => GetKeyUp(GetKeyCodeFromName(keyName));
+        public static bool IsKeyPressed(string keyName) => IsKeyPressed(GetKeyCodeFromName(keyName));
+        public static bool IsKeyHeld(string keyName) => IsKeyHeld(GetKeyCodeFromName(keyName));
+        public static bool IsKeyReleased(string keyName) => IsKeyReleased(GetKeyCodeFromName(keyName));
         
         private static int GetKeyCodeFromName(string keyName)
         {
@@ -101,6 +103,8 @@ namespace Engine
                 "down" => KeyCode.Down,
                 "left" => KeyCode.Left,
                 "right" => KeyCode.Right,
+                "h" => KeyCode.H,
+                "f12" => KeyCode.F12,
                 _ => throw new ArgumentException($"Unknown key name: {keyName}")
             };
         }
