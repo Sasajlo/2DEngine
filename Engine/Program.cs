@@ -18,7 +18,6 @@ namespace Engine
             {
                 Console.WriteLine("Failed to initialize engine!");
                 Console.WriteLine("Press any key to exit...");
-                Console.ReadKey();
                 return;
             }
 
@@ -60,7 +59,7 @@ namespace Engine
             
             // Add camera controller for WASD movement and mouse scroll zoom
             var cameraController = cameraObject.AddComponent<CameraController>();
-            cameraController.moveSpeed = 10.0f; // Faster movement for large world
+            cameraController.moveSpeed = 1.0f; // Faster movement for large world
             cameraController.zoomSpeed = 0.15f; // Smooth percentage-based zoom (15% per scroll)
             cameraController.minZoom = 1.0f;
             cameraController.maxZoom = 100.0f; // Allow more zoom out for large world
@@ -69,14 +68,14 @@ namespace Engine
             // Sprites are centered at their position, so tiles span from -0.5 to 99.5
             cameraController.worldMinX = -0.5f;
             cameraController.worldMinY = -0.5f;
-            cameraController.worldMaxX = 99.5f; // Last tile at (99,99) extends to 99.5
-            cameraController.worldMaxY = 99.5f; // Last tile at (99,99) extends to 99.5
+            cameraController.worldMaxX = 255.5f; // Last tile at (99,99) extends to 99.5
+            cameraController.worldMaxY = 255.5f; // Last tile at (99,99) extends to 99.5
             
             // Create world manager object
             var worldObject = scene.CreateGameObject("WorldManager");
             var worldManager = worldObject.AddComponent<WorldManager>();
-            worldManager.worldWidth = 100;
-            worldManager.worldHeight = 100;
+            worldManager.worldWidth = 256;
+            worldManager.worldHeight = 256;
             worldManager.tileSize = 1.0f;
             
             Console.WriteLine("Tile world scene created!");

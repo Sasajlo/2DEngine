@@ -17,6 +17,7 @@ public:
     
     void SetTitle(const std::string& title);
     void GetSize(int& width, int& height) const;
+    void SetSize(int width, int height);
     
     GLFWwindow* GetHandle() const { return m_window; }
     

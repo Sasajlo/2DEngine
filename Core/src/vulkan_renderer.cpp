@@ -230,7 +230,14 @@ void VulkanRenderer::Render() {
     vkWaitForFences(m_device, 1, &m_inFlightFences[m_currentFrame], VK_TRUE, UINT64_MAX);
     
     uint32_t imageIndex;
-    vkAcquireNextImageKHR(m_device, m_swapChain, UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
+    VkResult result = vkAcquireNextImageKHR(m_device, m_swapChain, UINT64_MAX, m_imageAvailableSemaphores[m_currentFrame], VK_NULL_HANDLE, &imageIndex);
+    
+    if (result == VK_ERROR_OUT_OF_DATE_KHR) {
+        RecreateSwapChain();
+        return;
+    } else if (result != VK_SUCCESS && result != VK_SUBOPTIMAL_KHR) {
+        throw std::runtime_error("failed to acquire swap chain image!");
+    }
     
     vkResetFences(m_device, 1, &m_inFlightFences[m_currentFrame]);
     
@@ -266,7 +273,13 @@ void VulkanRenderer::Render() {
     presentInfo.pSwapchains = swapChains;
     presentInfo.pImageIndices = &imageIndex;
     
-    vkQueuePresentKHR(m_presentQueue, &presentInfo);
+    result = vkQueuePresentKHR(m_presentQueue, &presentInfo);
+    
+    if (result == VK_ERROR_OUT_OF_DATE_KHR || result == VK_SUBOPTIMAL_KHR) {
+        RecreateSwapChain();
+    } else if (result != VK_SUCCESS) {
+        throw std::runtime_error("failed to present swap chain image!");
+    }
     
     m_currentFrame = (m_currentFrame + 1) % MAX_FRAMES_IN_FLIGHT;
     
@@ -312,15 +325,41 @@ bool VulkanRenderer::PickPhysicalDevice() {
     std::vector<VkPhysicalDevice> devices(deviceCount);
     vkEnumeratePhysicalDevices(m_instance, &deviceCount, devices.data());
     
+    // First pass: Look for discrete GPUs
     for (const auto& device : devices) {
-        QueueFamilyIndices indices = FindQueueFamilies(device);
-        if (indices.isComplete()) {
-            m_physicalDevice = device;
-            break;
+        if (IsDeviceSuitable(device)) {
+            VkPhysicalDeviceProperties deviceProperties;
+            vkGetPhysicalDeviceProperties(device, &deviceProperties);
+            if (deviceProperties.deviceType == VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU) {
+                std::cout << "Using graphics card: " << deviceProperties.deviceName << " (Discrete GPU)" << std::endl;
+                m_physicalDevice = device;
+                return true;
+            }
         }
     }
     
-    return m_physicalDevice != VK_NULL_HANDLE;
+    // Second pass: Fall back to any suitable device
+    for (const auto& device : devices) {
+        if (IsDeviceSuitable(device)) {
+            VkPhysicalDeviceProperties deviceProperties;
+            vkGetPhysicalDeviceProperties(device, &deviceProperties);
+            std::cout << "Using graphics card: " << deviceProperties.deviceName << " (Integrated GPU)" << std::endl;
+            m_physicalDevice = device;
+            return true;
+        }
+    }
+    
+    return false;
+}
+
+bool VulkanRenderer::IsDeviceSuitable(VkPhysicalDevice device) {
+    QueueFamilyIndices indices = FindQueueFamilies(device);
+    
+    // Check swap chain support
+    SwapChainSupportDetails swapChainSupport = QuerySwapChainSupport(device);
+    bool swapChainAdequate = !swapChainSupport.formats.empty() && !swapChainSupport.presentModes.empty();
+    
+    return indices.isComplete() && swapChainAdequate;
 }
 
 QueueFamilyIndices VulkanRenderer::FindQueueFamilies(VkPhysicalDevice device) {
@@ -485,6 +524,14 @@ VkSurfaceFormatKHR VulkanRenderer::ChooseSwapSurfaceFormat(const std::vector<VkS
 }
 
 VkPresentModeKHR VulkanRenderer::ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes) {
+    // Try IMMEDIATE first for high refresh rate support
+    for (const auto& availablePresentMode : availablePresentModes) {
+        if (availablePresentMode == VK_PRESENT_MODE_IMMEDIATE_KHR) {
+            return availablePresentMode;
+        }
+    }
+    
+    // Fall back to MAILBOX
     for (const auto& availablePresentMode : availablePresentModes) {
         if (availablePresentMode == VK_PRESENT_MODE_MAILBOX_KHR) {
             return availablePresentMode;
@@ -807,6 +854,50 @@ bool VulkanRenderer::CreateSyncObjects() {
     }
     
     return true;
+}
+
+void VulkanRenderer::RecreateSwapChain() {
+    // Wait for the device to be idle before recreating the swapchain
+    vkDeviceWaitIdle(m_device);
+    
+    // Clean up existing swapchain-dependent resources
+    for (auto framebuffer : m_swapChainFramebuffers) {
+        vkDestroyFramebuffer(m_device, framebuffer, nullptr);
+    }
+    m_swapChainFramebuffers.clear();
+    
+    for (auto imageView : m_swapChainImageViews) {
+        vkDestroyImageView(m_device, imageView, nullptr);
+    }
+    m_swapChainImageViews.clear();
+    
+    if (m_swapChain != VK_NULL_HANDLE) {
+        vkDestroySwapchainKHR(m_device, m_swapChain, nullptr);
+        m_swapChain = VK_NULL_HANDLE;
+    }
+    
+    // Update window size information
+    int width, height;
+    m_window->GetSize(width, height);
+    
+    // Wait for the window to not be minimized
+    while (width == 0 || height == 0) {
+        glfwWaitEvents();
+        m_window->GetSize(width, height);
+    }
+    
+    // Recreate swapchain and dependent resources
+    if (!CreateSwapChain()) {
+        throw std::runtime_error("failed to recreate swapchain!");
+    }
+    
+    if (!CreateImageViews()) {
+        throw std::runtime_error("failed to recreate image views!");
+    }
+    
+    if (!CreateFramebuffers()) {
+        throw std::runtime_error("failed to recreate framebuffers!");
+    }
 }
 
 void VulkanRenderer::RecordCommandBuffer(VkCommandBuffer commandBuffer, uint32_t imageIndex) {

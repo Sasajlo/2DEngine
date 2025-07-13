@@ -138,6 +138,7 @@ private:
     bool CreateRenderPass();
     bool CreateGraphicsPipeline();
     bool CreateFramebuffers();
+    void RecreateSwapChain();
     bool CreateCommandPool();
     bool CreateCommandBuffers();
     bool CreateSyncObjects();
@@ -149,6 +150,7 @@ private:
     VkSurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<VkSurfaceFormatKHR>& availableFormats);
     VkPresentModeKHR ChooseSwapPresentMode(const std::vector<VkPresentModeKHR>& availablePresentModes);
     VkExtent2D ChooseSwapExtent(const VkSurfaceCapabilitiesKHR& capabilities);
+    bool IsDeviceSuitable(VkPhysicalDevice device);
     
     std::vector<char> ReadFile(const std::string& filename);
     VkShaderModule CreateShaderModule(const std::vector<char>& code);

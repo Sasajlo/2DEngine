@@ -25,19 +25,23 @@ namespace Engine.Components
         }
     }
     
-    public class Tile : Component
+    public class Tile
     {
         public TileData tileData { get; private set; }
         public int gridX { get; set; }
         public int gridY { get; set; }
+        public Vector3 position { get; set; }
+        public Vector3 scale { get; set; }
+        public bool isVisible { get; set; } = true;
+        public int sortingOrder { get; set; }
         
-        private Sprite _sprite;
-        private SpriteRenderer _spriteRenderer;
-        
-        public override void Awake()
+        public Tile(int gridX, int gridY, Vector3 position, Vector3 scale)
         {
-            _sprite = gameObject.GetComponent<Sprite>();
-            _spriteRenderer = gameObject.GetComponent<SpriteRenderer>();
+            this.gridX = gridX;
+            this.gridY = gridY;
+            this.position = position;
+            this.scale = scale;
+            this.sortingOrder = gridY; // Lower Y values render in front
         }
         
         public bool LoadTileType(string tileTypeName)
@@ -56,22 +60,8 @@ namespace Engine.Components
                 
                 if (tileData != null)
                 {
-                    // Get sprite component directly instead of relying on cached field
-                    // This handles the case where LoadTileType is called before Awake
-                    var sprite = gameObject.GetComponent<Sprite>();
-                    var spriteRenderer = gameObject.GetComponent<SpriteRenderer>();
-                    
-                    if (sprite != null)
-                    {
-                        sprite.color = tileData.color.ToVector4();
-                        sprite.texturePath = tileData.texture;
-                    }
-                    
-                    // Set sprite renderer sorting order based on grid position
-                    if (spriteRenderer != null)
-                    {
-                        spriteRenderer.sortingOrder = gridY; // Lower Y values render in front
-                    }
+                    // Update visibility based on tile data
+                    isVisible = IsVisible();
                 }
                 
                 return tileData != null;

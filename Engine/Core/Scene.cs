@@ -108,10 +108,19 @@ namespace Engine
                 .OrderBy(sr => sr.sortingOrder)
                 .ToArray();
             
+            // Get all world managers for tile rendering
+            var worldManagers = FindObjectsOfType<WorldManager>();
+            
             // Render all sprites
             foreach (var spriteRenderer in spriteRenderers)
             {
                 spriteRenderer.Render();
+            }
+            
+            // Render tiles from all world managers
+            foreach (var worldManager in worldManagers)
+            {
+                worldManager.Render();
             }
         }
         

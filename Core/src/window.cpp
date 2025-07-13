@@ -29,7 +29,16 @@ bool Window::Initialize(int width, int height, const std::string& title) {
     // Get actual window size after maximization
     glfwGetFramebufferSize(m_window, &m_width, &m_height);
     
-    // TODO: Add resize callback when swapchain recreation is implemented
+    // Set window user pointer to this instance for callbacks
+    glfwSetWindowUserPointer(m_window, this);
+    
+    // Set resize callback to update window size when display configuration changes
+    glfwSetFramebufferSizeCallback(m_window, [](GLFWwindow* window, int width, int height) {
+        Window* windowInstance = static_cast<Window*>(glfwGetWindowUserPointer(window));
+        if (windowInstance) {
+            windowInstance->SetSize(width, height);
+        }
+    });
     
     return true;
 }
@@ -63,4 +72,9 @@ void Window::SetTitle(const std::string& title) {
 void Window::GetSize(int& width, int& height) const {
     width = m_width;
     height = m_height;
+}
+
+void Window::SetSize(int width, int height) {
+    m_width = width;
+    m_height = height;
 } 
