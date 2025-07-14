@@ -1093,7 +1093,8 @@ void VulkanRenderer::RenderChunkMesh(
     uint32_t indexCount,
     uint32_t* textureIndices,
     float* colors,
-    uint32_t quadCount
+    uint32_t quadCount,
+    float tileSize
 ) {
     if (!vertices || !indices || !textureIndices || !colors || vertexCount == 0 || indexCount == 0 || quadCount == 0) {
         return;
@@ -1113,8 +1114,8 @@ void VulkanRenderer::RenderChunkMesh(
         uint32_t v3_idx = indices[baseIndex + 3]; // top-right
         
         // Calculate center position of the quad
-        float centerX = (vertices[v0_idx * 3] + vertices[v1_idx * 3] + vertices[v2_idx * 3] + vertices[v3_idx * 3]) / 4.0f;
-        float centerY = (vertices[v0_idx * 3 + 1] + vertices[v1_idx * 3 + 1] + vertices[v2_idx * 3 + 1] + vertices[v3_idx * 3 + 1]) / 4.0f;
+        float centerX = (vertices[v0_idx * 3]) + 0.5f * tileSize;
+        float centerY = (vertices[v0_idx * 3 + 1]) + 0.5f * tileSize;
         
         // Create transform matrix for this quad
         float worldMatrix[16] = {

@@ -65,7 +65,8 @@ extern "C" {
         uint32_t indexCount,       // Number of indices
         uint32_t* textureIndices,  // Array of texture indices per quad (6 indices = 1 quad)
         float* colors,             // Array of colors per quad (rgba for each quad)
-        uint32_t quadCount         // Number of quads in the mesh
+        uint32_t quadCount,        // Number of quads in the mesh
+        float tileSize             // Size of each tile in world units
     );
     
     // Camera

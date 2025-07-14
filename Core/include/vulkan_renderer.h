@@ -60,7 +60,8 @@ public:
         uint32_t indexCount,
         uint32_t* textureIndices,
         float* colors,
-        uint32_t quadCount
+        uint32_t quadCount,
+        float tileSize
     );
     void SetCameraMatrices(float* viewMatrix, float* projectionMatrix);
     

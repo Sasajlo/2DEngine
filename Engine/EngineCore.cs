@@ -95,7 +95,8 @@ namespace Engine
             uint indexCount,
             [MarshalAs(UnmanagedType.LPArray)] uint[] textureIndices,
             [MarshalAs(UnmanagedType.LPArray)] float[] colors,
-            uint quadCount);
+            uint quadCount,
+            float tileSize);
             
         // Camera
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]

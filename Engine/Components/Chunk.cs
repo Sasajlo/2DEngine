@@ -236,7 +236,8 @@ namespace Engine.Components
                 (uint)_chunkMesh.indices.Count,
                 textureIndexArray,
                 colorArray,
-                (uint)_chunkMesh.textureIndices.Count
+                (uint)_chunkMesh.textureIndices.Count,
+                _tileSize
             );
         }
         

@@ -299,11 +299,12 @@ extern "C" {
         uint32_t indexCount,
         uint32_t* textureIndices,
         float* colors,
-        uint32_t quadCount
+        uint32_t quadCount,
+        float tileSize
     ) {
         try {
             if (g_renderer && vertices && indices && textureIndices && colors) {
-                g_renderer->RenderChunkMesh(vertices, vertexCount, indices, indexCount, textureIndices, colors, quadCount);
+                g_renderer->RenderChunkMesh(vertices, vertexCount, indices, indexCount, textureIndices, colors, quadCount, tileSize);
             }
         } catch (...) {
             // Swallow exceptions
