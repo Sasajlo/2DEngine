@@ -44,8 +44,29 @@ public:
         bool flipX,
         bool flipY
     );
+    void RenderSpriteWithIndex(
+        uint32_t textureIndex,
+        float* worldMatrix,
+        float* color,
+        float* size,
+        int sortingOrder,
+        bool flipX,
+        bool flipY
+    );
+    void RenderChunkMesh(
+        float* vertices,
+        uint32_t vertexCount,
+        uint32_t* indices,
+        uint32_t indexCount,
+        uint32_t* textureIndices,
+        float* colors,
+        uint32_t quadCount
+    );
     void SetCameraMatrices(float* viewMatrix, float* projectionMatrix);
     
+    // Texture loading (make public)
+    uint32_t LoadTexture(const std::string& texturePath);
+
 private:
     Window* m_window;
     
@@ -156,7 +177,6 @@ private:
     VkShaderModule CreateShaderModule(const std::vector<char>& code);
     
     // Texture loading functions
-    uint32_t LoadTexture(const std::string& texturePath);
     bool CreateTextureImage(const std::string& texturePath, VkImage& textureImage, VkDeviceMemory& textureImageMemory);
     bool CreateTextureImageView(VkImage textureImage, VkImageView& textureImageView);
     bool CreateTextureSampler();

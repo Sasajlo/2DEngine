@@ -1,4 +1,5 @@
 #pragma once
+#include <cstdint>
 
 #ifdef ENGINE_CORE_EXPORTS
 #define ENGINE_API __declspec(dllexport)
@@ -45,6 +46,31 @@ extern "C" {
         bool flipY
     );
     
+    // Efficient sprite rendering with texture index
+    ENGINE_API void RenderSpriteWithIndex(
+        uint32_t textureIndex,
+        float* worldMatrix,
+        float* color,
+        float* size,
+        int sortingOrder,
+        bool flipX,
+        bool flipY
+    );
+    
+    // Chunk mesh rendering (new)
+    ENGINE_API void RenderChunkMesh(
+        float* vertices,           // Array of vertex positions (x, y, z)
+        uint32_t vertexCount,      // Number of vertices
+        uint32_t* indices,         // Array of vertex indices
+        uint32_t indexCount,       // Number of indices
+        uint32_t* textureIndices,  // Array of texture indices per quad (6 indices = 1 quad)
+        float* colors,             // Array of colors per quad (rgba for each quad)
+        uint32_t quadCount         // Number of quads in the mesh
+    );
+    
     // Camera
     ENGINE_API void SetCameraMatrices(float* viewMatrix, float* projectionMatrix);
+    
+    // Texture management
+    ENGINE_API uint32_t LoadTexture(const char* texturePath);
 } 

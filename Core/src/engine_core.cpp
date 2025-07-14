@@ -4,6 +4,7 @@
 #include <memory>
 #include <unordered_map>
 #include <unordered_set>
+#include <cstdint> // For uint32_t
 
 static std::unique_ptr<Window> g_window;
 static std::unique_ptr<VulkanRenderer> g_renderer;
@@ -213,13 +214,42 @@ extern "C" {
         }
     }
     
+    ENGINE_API void RenderSpriteWithIndex(
+        uint32_t textureIndex,
+        float* worldMatrix,
+        float* color,
+        float* size,
+        int sortingOrder,
+        bool flipX,
+        bool flipY
+    ) {
+        try {
+            if (g_renderer && worldMatrix && color && size) {
+                g_renderer->RenderSpriteWithIndex(textureIndex, worldMatrix, color, size, sortingOrder, flipX, flipY);
+            }
+        } catch (...) {
+            // Swallow exceptions
+        }
+    }
+    
     ENGINE_API void SetCameraMatrices(float* viewMatrix, float* projectionMatrix) {
         try {
             if (g_renderer && viewMatrix && projectionMatrix) {
                 g_renderer->SetCameraMatrices(viewMatrix, projectionMatrix);
             }
         } catch (...) {
-            // Swallow exceptions
+            // Ignore errors
+        }
+    }
+    
+    ENGINE_API uint32_t LoadTexture(const char* texturePath) {
+        try {
+            if (g_renderer && texturePath) {
+                return g_renderer->LoadTexture(texturePath);
+            }
+            return UINT32_MAX;
+        } catch (...) {
+            return UINT32_MAX;
         }
     }
     
@@ -259,6 +289,24 @@ extern "C" {
             g_deltaTime = 0.0f;
         } catch (...) {
             // Ignore errors in reset
+        }
+    }
+    
+    ENGINE_API void RenderChunkMesh(
+        float* vertices,
+        uint32_t vertexCount,
+        uint32_t* indices,
+        uint32_t indexCount,
+        uint32_t* textureIndices,
+        float* colors,
+        uint32_t quadCount
+    ) {
+        try {
+            if (g_renderer && vertices && indices && textureIndices && colors) {
+                g_renderer->RenderChunkMesh(vertices, vertexCount, indices, indexCount, textureIndices, colors, quadCount);
+            }
+        } catch (...) {
+            // Swallow exceptions
         }
     }
 } 

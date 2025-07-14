@@ -10,6 +10,7 @@ namespace Engine.Components
         public string name { get; set; }
         public TileColor color { get; set; }
         public string texture { get; set; }
+        public uint textureIndex { get; set; } = uint.MaxValue; // GPU texture index
     }
     
     public class TileColor
@@ -62,6 +63,9 @@ namespace Engine.Components
                 {
                     // Update visibility based on tile data
                     isVisible = IsVisible();
+                    
+                    // Load texture and get index
+                    tileData.textureIndex = TextureManager.LoadTexture(tileData.texture);
                 }
                 
                 return tileData != null;

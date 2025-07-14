@@ -75,10 +75,36 @@ namespace Engine
             [MarshalAs(UnmanagedType.I1)] bool flipX,
             [MarshalAs(UnmanagedType.I1)] bool flipY);
             
+        // Efficient sprite rendering with texture index
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void RenderSpriteWithIndex(
+            uint textureIndex,
+            [MarshalAs(UnmanagedType.LPArray, SizeConst = 16)] float[] worldMatrix,
+            [MarshalAs(UnmanagedType.LPArray, SizeConst = 4)] float[] color,
+            [MarshalAs(UnmanagedType.LPArray, SizeConst = 2)] float[] size,
+            int sortingOrder,
+            [MarshalAs(UnmanagedType.I1)] bool flipX,
+            [MarshalAs(UnmanagedType.I1)] bool flipY);
+            
+        // Chunk mesh rendering
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern void RenderChunkMesh(
+            [MarshalAs(UnmanagedType.LPArray)] float[] vertices,
+            uint vertexCount,
+            [MarshalAs(UnmanagedType.LPArray)] uint[] indices,
+            uint indexCount,
+            [MarshalAs(UnmanagedType.LPArray)] uint[] textureIndices,
+            [MarshalAs(UnmanagedType.LPArray)] float[] colors,
+            uint quadCount);
+            
         // Camera
         [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
         public static extern void SetCameraMatrices(
             [MarshalAs(UnmanagedType.LPArray, SizeConst = 16)] float[] viewMatrix,
             [MarshalAs(UnmanagedType.LPArray, SizeConst = 16)] float[] projectionMatrix);
+            
+        // Texture management
+        [DllImport(DLL_NAME, CallingConvention = CallingConvention.Cdecl)]
+        public static extern uint LoadTexture([MarshalAs(UnmanagedType.LPUTF8Str)] string texturePath);
     }
 } 

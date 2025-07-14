@@ -721,10 +721,16 @@ bool VulkanRenderer::CreateGraphicsPipeline() {
     multisampling.sampleShadingEnable = VK_FALSE;
     multisampling.rasterizationSamples = VK_SAMPLE_COUNT_1_BIT;
     
-    // Color blending
+    // Color blending with alpha transparency support
     VkPipelineColorBlendAttachmentState colorBlendAttachment{};
     colorBlendAttachment.colorWriteMask = VK_COLOR_COMPONENT_R_BIT | VK_COLOR_COMPONENT_G_BIT | VK_COLOR_COMPONENT_B_BIT | VK_COLOR_COMPONENT_A_BIT;
-    colorBlendAttachment.blendEnable = VK_FALSE;
+    colorBlendAttachment.blendEnable = VK_TRUE;
+    colorBlendAttachment.srcColorBlendFactor = VK_BLEND_FACTOR_SRC_ALPHA;
+    colorBlendAttachment.dstColorBlendFactor = VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+    colorBlendAttachment.colorBlendOp = VK_BLEND_OP_ADD;
+    colorBlendAttachment.srcAlphaBlendFactor = VK_BLEND_FACTOR_ONE;
+    colorBlendAttachment.dstAlphaBlendFactor = VK_BLEND_FACTOR_ZERO;
+    colorBlendAttachment.alphaBlendOp = VK_BLEND_OP_ADD;
     
     VkPipelineColorBlendStateCreateInfo colorBlending{};
     colorBlending.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -1044,6 +1050,104 @@ void VulkanRenderer::RenderSprite(
         sprite.flipY = flipY;
         
         m_spriteQueue.push_back(sprite);
+    }
+}
+
+void VulkanRenderer::RenderSpriteWithIndex(
+    uint32_t textureIndex,
+    float* worldMatrix,
+    float* color,
+    float* size,
+    int sortingOrder,
+    bool flipX,
+    bool flipY
+) {
+    if (worldMatrix && color && size && textureIndex != UINT32_MAX) {
+        SpriteData sprite;
+        sprite.texturePath = ""; // Not needed for index-based rendering
+        sprite.textureIndex = textureIndex;
+        
+        // Copy matrices and data
+        for (int i = 0; i < 16; i++) {
+            sprite.worldMatrix[i] = worldMatrix[i];
+        }
+        for (int i = 0; i < 4; i++) {
+            sprite.color[i] = color[i];
+        }
+        for (int i = 0; i < 2; i++) {
+            sprite.size[i] = size[i];
+        }
+        
+        sprite.sortingOrder = sortingOrder;
+        sprite.flipX = flipX;
+        sprite.flipY = flipY;
+        
+        m_spriteQueue.push_back(sprite);
+    }
+}
+
+void VulkanRenderer::RenderChunkMesh(
+    float* vertices,
+    uint32_t vertexCount,
+    uint32_t* indices,
+    uint32_t indexCount,
+    uint32_t* textureIndices,
+    float* colors,
+    uint32_t quadCount
+) {
+    if (!vertices || !indices || !textureIndices || !colors || vertexCount == 0 || indexCount == 0 || quadCount == 0) {
+        return;
+    }
+    
+    // Render each quad as an individual sprite using the existing pipeline
+    // This is more efficient than individual tile rendering because we're batching the data
+    for (uint32_t quadIndex = 0; quadIndex < quadCount; quadIndex++) {
+        // Calculate vertex indices for this quad (6 indices per quad)
+        uint32_t baseIndex = quadIndex * 6;
+        if (baseIndex + 5 >= indexCount) break;
+        
+        // Get the 4 vertices for this quad
+        uint32_t v0_idx = indices[baseIndex + 0]; // bottom-left
+        uint32_t v1_idx = indices[baseIndex + 1]; // bottom-right
+        uint32_t v2_idx = indices[baseIndex + 2]; // top-left
+        uint32_t v3_idx = indices[baseIndex + 3]; // top-right
+        
+        // Calculate center position of the quad
+        float centerX = (vertices[v0_idx * 3] + vertices[v1_idx * 3] + vertices[v2_idx * 3] + vertices[v3_idx * 3]) / 4.0f;
+        float centerY = (vertices[v0_idx * 3 + 1] + vertices[v1_idx * 3 + 1] + vertices[v2_idx * 3 + 1] + vertices[v3_idx * 3 + 1]) / 4.0f;
+        
+        // Create transform matrix for this quad
+        float worldMatrix[16] = {
+            1.0f, 0.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f, 0.0f,
+            0.0f, 0.0f, 1.0f, 0.0f,
+            centerX, centerY, 0.0f, 1.0f
+        };
+        
+        // Get color for this quad
+        float color[4] = {
+            colors[quadIndex * 4 + 0], // r
+            colors[quadIndex * 4 + 1], // g
+            colors[quadIndex * 4 + 2], // b
+            colors[quadIndex * 4 + 3]  // a
+        };
+        
+        // Default size (1x1 for tiles)
+        float size[2] = { 1.0f, 1.0f };
+        
+        // Get texture index for this quad
+        uint32_t textureIndex = textureIndices[quadIndex];
+        
+        // Use the existing sprite rendering with texture index
+        RenderSpriteWithIndex(
+            textureIndex,
+            worldMatrix,
+            color,
+            size,
+            0, // sorting order
+            false, // flipX
+            false  // flipY
+        );
     }
 }
 

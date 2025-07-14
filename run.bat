@@ -43,5 +43,3 @@ if %exit_code% equ 0 (
 ) else (
     echo Engine exited with error code: %exit_code%
 )
-
-pause 

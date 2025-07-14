@@ -78,6 +78,10 @@ namespace Engine
             worldManager.worldHeight = 256;
             worldManager.tileSize = 1.0f;
             
+            // Create tile hover effect object
+            var hoverObject = scene.CreateGameObject("TileHoverEffect");
+            var hoverEffect = hoverObject.AddComponent<TileHoverEffect>();
+            
             Console.WriteLine("Tile world scene created!");
         }
     }

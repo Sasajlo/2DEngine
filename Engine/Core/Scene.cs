@@ -111,6 +111,9 @@ namespace Engine
             // Get all world managers for tile rendering
             var worldManagers = FindObjectsOfType<WorldManager>();
             
+            // Get all tile hover effects for hover rendering
+            var tileHoverEffects = FindObjectsOfType<TileHoverEffect>();
+            
             // Render all sprites
             foreach (var spriteRenderer in spriteRenderers)
             {
@@ -121,6 +124,12 @@ namespace Engine
             foreach (var worldManager in worldManagers)
             {
                 worldManager.Render();
+            }
+            
+            // Render tile hover effects on top
+            foreach (var hoverEffect in tileHoverEffects)
+            {
+                hoverEffect.Render();
             }
         }
         

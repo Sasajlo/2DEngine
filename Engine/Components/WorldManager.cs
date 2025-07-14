@@ -68,6 +68,22 @@ namespace Engine.Components
             {
                 DebugSystem.RenderChunkGrid(this);
                 DebugSystem.LogChunkInfo(visibleChunks.Count, _chunks.Count);
+                
+                // Log mesh statistics for visible chunks
+                int totalVertices = 0;
+                int totalIndices = 0;
+                int totalQuads = 0;
+                
+                foreach (var chunk in visibleChunks)
+                {
+                    var stats = chunk.GetMeshStats();
+                    totalVertices += stats.vertexCount;
+                    totalIndices += stats.indexCount;
+                    totalQuads += stats.quadCount;
+                }
+                
+                Console.WriteLine($"Visible chunks mesh: {totalVertices} vertices, {totalIndices} indices, {totalQuads} quads");
+                Console.WriteLine($"Texture info: {TextureManager.GetDebugInfo()}");
             }
         }
         
@@ -214,9 +230,11 @@ namespace Engine.Components
         
         public Vector2 WorldToGrid(Vector3 worldPosition)
         {
+            // Since tiles are centered at their grid positions, we need to adjust the conversion
+            // A tile at grid (0,0) is centered at world (0,0) and spans from (-0.5,-0.5) to (0.5,0.5)
             return new Vector2(
-                (int)(worldPosition.X / tileSize),
-                (int)(worldPosition.Y / tileSize)
+                (float)Math.Floor(worldPosition.X / tileSize + 0.5f),
+                (float)Math.Floor(worldPosition.Y / tileSize + 0.5f)
             );
         }
         
